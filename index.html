@@ -1378,50 +1378,57 @@ async function sheetsApiCall(method,url,body){
   return res.json();
 }
 
+function buildRangeUrl(sheetId, sheetName, cellRange){
+  // Sheet names with spaces must be quoted: 'Dynamic Budget Planner'!B1:D40
+  // Then the whole thing is encoded once for the URL path segment
+  const quotedRange=`'${sheetName}'!${cellRange}`;
+  return `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(quotedRange)}`;
+}
+
 async function sheetsPull(){
   if(!accessToken){setSyncStatus('error','Not connected');return;}
   setSyncStatus('syncing','Pulling...');
   try{
-    // Your sheet: col B = label, col C = value, rows 1–40
-    const range=encodeURIComponent(`${sheetsConfig.sheetName}!B1:D40`);
-    const data=await sheetsApiCall('GET',
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${range}`);
+    // Sheet layout: col B = label, col C = value (rows 1–35)
+    const url=buildRangeUrl(sheetsConfig.sheetId, sheetsConfig.sheetName, 'B1:C35');
+    console.log('Pull URL:', url);
+    const data=await sheetsApiCall('GET', url);
     const rows=data.values||[];
+    console.log('Rows received:', rows.length, rows);
     let section='';
-    let matched=0,skipped=0;
+    let matched=0;
     rows.forEach(row=>{
-      const colB=(row[0]||'').toString().trim();   // name / header
-      const colC=(row[1]||'').toString().replace(/,/g,'').trim(); // value
+      const colB=(row[0]||'').toString().trim();
+      const colC=(row[1]||'').toString().replace(/,/g,'').trim();
       const val=parseFloat(colC)||0;
-      // detect section headers (emoji + keyword)
-      if(colB.includes('INCOME'))   {section='income';return;}
-      if(colB.includes('EXPENSE'))  {section='expense';return;}
-      if(colB.includes('BALANCE')||colB.includes('ANALYSIS')||colB.includes('FINANCIAL')||!colB){return;}
+      if(colB.includes('INCOME'))  {section='income';return;}
+      if(colB.includes('EXPENSE')) {section='expense';return;}
+      if(!colB||colB.includes('BALANCE')||colB.includes('ANALYSIS')||colB.includes('FINANCIAL')||colB.includes('Dynamic')){return;}
       if(!section)return;
-      // try to match name — exact first, then fuzzy (strip "(LKR)" etc.)
       const cleanB=colB.replace(/\s*\(LKR\)\s*/i,'').trim().toLowerCase();
       const existing=items.find(i=>{
-        const cleanName=i.name.toLowerCase();
-        return cleanName===cleanB||cleanName===colB.toLowerCase();
+        const n=i.name.toLowerCase();
+        return n===cleanB||n===colB.toLowerCase();
       });
-      if(existing){existing.val=val;matched++;}
-      else if(val>0&&colB){
-        // add as new item if we can identify the section
-        items.push({
-          id:uid(),type:section==='income'?'income':'expense',
+      if(existing){
+        existing.val=val;
+        matched++;
+        console.log('Matched:', existing.name, '=', val);
+      } else if(val>0&&colB){
+        items.push({id:uid(),type:section==='income'?'income':'expense',
           name:colB.replace(/\s*\(LKR\)\s*/i,'').trim(),
           val,freq:'monthly',cat:section==='income'?'':'other',
-          tag:'variable',purpose:'',on:true
-        });
+          tag:'variable',purpose:'',on:true});
         matched++;
-      } else skipped++;
+        console.log('Added new:', colB, '=', val);
+      }
     });
     recalc();
     setSyncStatus('connected',`Pulled — ${matched} items synced`);
     setLastSync();
   } catch(e){
-    setSyncStatus('error','Pull failed: '+e.message.slice(0,40));
-    console.error('Pull error:',e);
+    setSyncStatus('error','Pull failed: '+e.message.slice(0,50));
+    console.error('Pull error full:', e);
   }
 }
 
@@ -1451,7 +1458,7 @@ async function sheetsPush(){
         :`⚠️ DEFICIT: Over budget by ${fmt(Math.abs(bal))} LKR.`],
     ];
     await sheetsApiCall('PUT',
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${encodeURIComponent(sheetsConfig.sheetName+'!A1')}?valueInputOption=USER_ENTERED`,
+      buildRangeUrl(sheetsConfig.sheetId,sheetsConfig.sheetName,'A1')+'?valueInputOption=USER_ENTERED',
       {values,majorDimension:'ROWS'}
     );
     setSyncStatus('connected','Pushed to Sheet');
@@ -1502,7 +1509,7 @@ async function doSaveMonthToSheet(month,year,tabName,overwrite){
     if(sheet&&overwrite){
       sheetId=sheet.properties.sheetId;
       // clear it
-      await sheetsApiCall('POST',`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${encodeURIComponent(tabName+'!A1:Z200')}:clear`,{});
+      await sheetsApiCall('POST', buildRangeUrl(sheetsConfig.sheetId,tabName,'A1:Z200')+':clear', {});
     } else if(!sheet){
       // add new sheet
       const addRes=await sheetsApiCall('POST',`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}:batchUpdate`,{
@@ -1536,7 +1543,7 @@ async function doSaveMonthToSheet(month,year,tabName,overwrite){
       ['Net balance',totalIncome()-totalExpenses(),'','','']
     ];
     await sheetsApiCall('PUT',
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${encodeURIComponent(tabName+'!A1')}?valueInputOption=USER_ENTERED`,
+      buildRangeUrl(sheetsConfig.sheetId,tabName,'A1')+'?valueInputOption=USER_ENTERED',
       {values:rows}
     );
     setSyncStatus('connected',`Saved to "${tabName}"`);
