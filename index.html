@@ -524,8 +524,9 @@ td input.actual:focus{outline:none;border-color:var(--accent);}
       <input type="text" class="form-input" id="gapi-client-id" placeholder="xxxxxxxxxx.apps.googleusercontent.com"></div>
     <div class="form-row"><label class="form-label">Spreadsheet ID (from the URL)</label>
       <input type="text" class="form-input" id="gapi-sheet-id" placeholder="1q11IV9GWDJsP5f28eO9oxzKk9bzN35zsAvmM6dUp8DM" value="1q11IV9GWDJsP5f28eO9oxzKk9bzN35zsAvmM6dUp8DM"></div>
-    <div class="form-row"><label class="form-label">Main sheet / tab name</label>
+    <div class="form-row"><label class="form-label">Main sheet / tab name <span style="font-size:11px;color:var(--text3);">(the tab name at the bottom of your Google Sheet — usually Sheet1)</span></label>
       <input type="text" class="form-input" id="gapi-sheet-name" placeholder="Sheet1" value="Sheet1"></div>
+    <div style="font-size:11px;color:var(--text2);background:var(--surface2);padding:8px 10px;border-radius:var(--radius);margin-bottom:4px;">Open your sheet → look at the bottom tab → copy the exact name. Your main tab is likely <strong>Sheet1</strong> or it may be renamed.</div>
     <div id="sheets-setup-error" style="color:var(--danger);font-size:12px;margin-bottom:10px;display:none;"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeSheetsSetup()">Cancel</button>
@@ -1291,6 +1292,10 @@ function toggleExpander(){
 // ════════════════════════════════════════════════════════
 const SCOPES='https://www.googleapis.com/auth/spreadsheets';
 
+// Your sheet layout (B = name, C = value, D = totals/notes)
+// Row markers: "INCOME STREAMS" and "ITEMIZED EXPENSES" in col B
+// e.g. B2="💵 INCOME STREAMS", B3="Trevin Net Pay (LKR)", C3="360,000"
+
 function sheetsConnect(){
   document.getElementById('gapi-client-id').value=sheetsConfig.clientId||'';
   document.getElementById('gapi-sheet-id').value=sheetsConfig.sheetId||'1q11IV9GWDJsP5f28eO9oxzKk9bzN35zsAvmM6dUp8DM';
@@ -1299,107 +1304,162 @@ function sheetsConnect(){
 }
 function closeSheetsSetup(){document.getElementById('sheets-setup-overlay').classList.remove('open');}
 
+function waitForGis(cb){
+  if(typeof google!=='undefined'&&google.accounts){cb();return;}
+  let tries=0;
+  const t=setInterval(()=>{
+    tries++;
+    if(typeof google!=='undefined'&&google.accounts){clearInterval(t);cb();}
+    else if(tries>40){clearInterval(t);setSyncStatus('error','Google library failed to load — check network');}
+  },250);
+}
+
 function initGapi(){
   const clientId=document.getElementById('gapi-client-id').value.trim();
   const sheetId=document.getElementById('gapi-sheet-id').value.trim();
-  const sheetName=document.getElementById('gapi-sheet-name').value.trim();
+  const sheetName=document.getElementById('gapi-sheet-name').value.trim()||'Sheet1';
   const errEl=document.getElementById('sheets-setup-error');
   errEl.style.display='none';
   if(!clientId){errEl.textContent='Please enter a Client ID.';errEl.style.display='block';return;}
   sheetsConfig={clientId,sheetId,sheetName};
   setSyncStatus('syncing','Connecting...');
-  try{
-    tokenClient=google.accounts.oauth2.initTokenClient({
-      client_id:clientId,scope:SCOPES,
-      callback:(response)=>{
-        if(response.error){setSyncStatus('error','Auth failed: '+response.error);return;}
-        accessToken=response.access_token;
-        closeSheetsSetup();
-        setSyncStatus('connected','Connected — '+sheetName);
-        document.getElementById('sheets-sync-btn').style.display='';
-        document.getElementById('sheets-push-btn').style.display='';
-        document.getElementById('sheets-connect-btn').textContent='Reconnect';
-        sheetsPull();
-      }
-    });
-    tokenClient.requestAccessToken();
-  } catch(e){setSyncStatus('error','Error: '+e.message);errEl.textContent=e.message;errEl.style.display='block';}
+  waitForGis(()=>{
+    try{
+      tokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:clientId,
+        scope:SCOPES,
+        callback:(response)=>{
+          if(response.error){
+            setSyncStatus('error','Auth failed: '+response.error);
+            const errEl=document.getElementById('sheets-setup-error');
+            errEl.textContent='Auth error: '+response.error;errEl.style.display='block';
+            return;
+          }
+          accessToken=response.access_token;
+          closeSheetsSetup();
+          setSyncStatus('connected','Connected — '+sheetName);
+          document.getElementById('sheets-sync-btn').style.display='';
+          document.getElementById('sheets-push-btn').style.display='';
+          document.getElementById('sheets-connect-btn').textContent='Reconnect';
+          sheetsPull();
+        }
+      });
+      tokenClient.requestAccessToken({prompt:'consent'});
+    } catch(e){
+      setSyncStatus('error','Init error');
+      const errEl=document.getElementById('sheets-setup-error');
+      errEl.textContent='Error: '+e.message;errEl.style.display='block';
+      console.error(e);
+    }
+  });
 }
 
 function setSyncStatus(state,label){
-  const dot=document.getElementById('sync-dot');
-  const lbl=document.getElementById('sync-label');
-  dot.className='sync-dot '+state;
-  lbl.textContent=label;
+  document.getElementById('sync-dot').className='sync-dot '+state;
+  document.getElementById('sync-label').textContent=label;
 }
 function setLastSync(){
   document.getElementById('sync-last').textContent='Last sync: '+new Date().toLocaleTimeString();
 }
 
 async function sheetsApiCall(method,url,body){
-  const res=await fetch(url,{
-    method,headers:{'Authorization':'Bearer '+accessToken,'Content-Type':'application/json'},
-    body:body?JSON.stringify(body):undefined
-  });
+  const opts={method,headers:{'Authorization':'Bearer '+accessToken,'Content-Type':'application/json'}};
+  if(body!==undefined)opts.body=JSON.stringify(body);
+  const res=await fetch(url,opts);
+  if(res.status===401){
+    // token expired — prompt refresh
+    setSyncStatus('error','Session expired — reconnect');
+    accessToken=null;
+    document.getElementById('sheets-sync-btn').style.display='none';
+    document.getElementById('sheets-push-btn').style.display='none';
+    throw new Error('Token expired');
+  }
   if(!res.ok){const t=await res.text();throw new Error(t);}
   return res.json();
 }
 
 async function sheetsPull(){
-  if(!accessToken){alert('Please connect to Google Sheets first.');return;}
+  if(!accessToken){setSyncStatus('error','Not connected');return;}
   setSyncStatus('syncing','Pulling...');
   try{
-    const range=`${sheetsConfig.sheetName}!A1:C50`;
-    const data=await sheetsApiCall('GET',`https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${encodeURIComponent(range)}`);
+    // Your sheet: col B = label, col C = value, rows 1–40
+    const range=encodeURIComponent(`${sheetsConfig.sheetName}!B1:D40`);
+    const data=await sheetsApiCall('GET',
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${range}`);
     const rows=data.values||[];
-    // parse income and expenses from sheet
     let section='';
+    let matched=0,skipped=0;
     rows.forEach(row=>{
-      const label=(row[0]||'').toString().trim();
-      const valStr=(row[1]||'').toString().replace(/,/g,'');
-      const val=parseFloat(valStr)||0;
-      if(label.includes('INCOME'))section='income';
-      else if(label.includes('EXPENSE'))section='expense';
-      else if(label&&val&&section){
-        const existing=items.find(i=>i.name.toLowerCase()===label.toLowerCase());
-        if(existing)existing.val=val;
-      }
+      const colB=(row[0]||'').toString().trim();   // name / header
+      const colC=(row[1]||'').toString().replace(/,/g,'').trim(); // value
+      const val=parseFloat(colC)||0;
+      // detect section headers (emoji + keyword)
+      if(colB.includes('INCOME'))   {section='income';return;}
+      if(colB.includes('EXPENSE'))  {section='expense';return;}
+      if(colB.includes('BALANCE')||colB.includes('ANALYSIS')||colB.includes('FINANCIAL')||!colB){return;}
+      if(!section)return;
+      // try to match name — exact first, then fuzzy (strip "(LKR)" etc.)
+      const cleanB=colB.replace(/\s*\(LKR\)\s*/i,'').trim().toLowerCase();
+      const existing=items.find(i=>{
+        const cleanName=i.name.toLowerCase();
+        return cleanName===cleanB||cleanName===colB.toLowerCase();
+      });
+      if(existing){existing.val=val;matched++;}
+      else if(val>0&&colB){
+        // add as new item if we can identify the section
+        items.push({
+          id:uid(),type:section==='income'?'income':'expense',
+          name:colB.replace(/\s*\(LKR\)\s*/i,'').trim(),
+          val,freq:'monthly',cat:section==='income'?'':'other',
+          tag:'variable',purpose:'',on:true
+        });
+        matched++;
+      } else skipped++;
     });
     recalc();
-    setSyncStatus('connected','Pulled from Sheet');
+    setSyncStatus('connected',`Pulled — ${matched} items synced`);
     setLastSync();
-  } catch(e){setSyncStatus('error','Pull failed');console.error(e);}
+  } catch(e){
+    setSyncStatus('error','Pull failed: '+e.message.slice(0,40));
+    console.error('Pull error:',e);
+  }
 }
 
 async function sheetsPush(){
-  if(!accessToken){alert('Please connect to Google Sheets first.');return;}
+  if(!accessToken){setSyncStatus('error','Not connected');return;}
   setSyncStatus('syncing','Pushing...');
   try{
     const inc=items.filter(i=>i.type==='income');
     const exp=items.filter(i=>i.type==='expense');
     const totalInc=totalIncome(),totalExp=totalExpenses(),bal=totalInc-totalExp;
+    // Preserve original sheet layout: col A empty, col B label, col C value, col D totals
     const values=[
-      ['','⚡ Dynamic Budget Planner — Impact Dashboard'],
-      [''],
+      ['','⚡ Dynamic Budget Planner — Impact Dashboard','',''],
+      ['','','',''],
       ['','💵 INCOME STREAMS','','TOTAL COMBINED INCOME'],
-      ...inc.map(i=>['',i.name,i.val.toLocaleString()]),
-      ['','','',fmt(totalInc)],
-      [''],
+      ...inc.map(i=>['',i.name+' (LKR)',i.on?i.val:0,'']),
+      ['','','',totalInc],
+      ['','','',''],
       ['','💸 ITEMIZED EXPENSES','','TOTAL MONTHLY EXPENSES'],
-      ...exp.map(i=>['',i.name,i.val.toLocaleString()]),
-      ['','','',fmt(totalExp)],
-      [''],
-      ['','MONTHLY BALANCE','',fmt(bal)],
-      [''],
-      ['','🤖 FINANCIAL IMPACT ANALYSIS','',bal>=0?`✅ SURPLUS: ${fmt(bal)} LKR surplus`:`⚠️ DEFICIT: ${fmt(Math.abs(bal))} LKR deficit`],
+      ...exp.map(i=>['',i.name,i.on?i.val:0,'']),
+      ['','','',totalExp],
+      ['','','',''],
+      ['','MONTHLY BALANCE','',bal],
+      ['','','',''],
+      ['','🤖 FINANCIAL IMPACT ANALYSIS','',bal>=0
+        ?`✅ SURPLUS ACHIEVED: Budget balanced with surplus of ${fmt(bal)} LKR.`
+        :`⚠️ DEFICIT: Over budget by ${fmt(Math.abs(bal))} LKR.`],
     ];
     await sheetsApiCall('PUT',
       `https://sheets.googleapis.com/v4/spreadsheets/${sheetsConfig.sheetId}/values/${encodeURIComponent(sheetsConfig.sheetName+'!A1')}?valueInputOption=USER_ENTERED`,
-      {values}
+      {values,majorDimension:'ROWS'}
     );
     setSyncStatus('connected','Pushed to Sheet');
     setLastSync();
-  } catch(e){setSyncStatus('error','Push failed: '+e.message);console.error(e);}
+  } catch(e){
+    setSyncStatus('error','Push failed: '+e.message.slice(0,40));
+    console.error('Push error:',e);
+  }
 }
 
 // ════════════════════════════════════════════════════════
