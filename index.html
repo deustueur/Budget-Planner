@@ -94,6 +94,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .page{display:none;animation:fadeIn .2s ease;}
 .page.active{display:block;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 .section-gap{margin-bottom:16px;}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}
 .three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;}
@@ -878,19 +879,53 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 </div>
 </div>
 
-<!-- Import CSV/Excel -->
-<div class="modal-overlay" id="import-overlay" onclick="if(event.target===this)document.getElementById('import-overlay').classList.remove('open')">
-<div class="modal">
-  <div class="modal-head"><span class="modal-title"><i class="ti ti-upload" style="color:var(--info);"></i> Import history / bank statement</span><button class="modal-close" onclick="document.getElementById('import-overlay').classList.remove('open')"><i class="ti ti-x"></i></button></div>
-  <div class="import-zone" id="import-zone" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)" onclick="document.getElementById('import-file').click()">
-    <i class="ti ti-file-spreadsheet" style="font-size:28px;margin-bottom:8px;display:block;"></i>
-    Drop a CSV or Excel file here, or click to browse.<br><span style="font-size:10px;margin-top:4px;display:block;">Bank statement CSV or a previous month's export.</span>
+<!-- Import / Drive Browser -->
+<div class="modal-overlay" id="import-overlay" onclick="if(event.target===this)closeImportModal()">
+<div class="modal" style="max-width:620px;">
+  <div class="modal-head">
+    <span class="modal-title"><i class="ti ti-history" style="color:var(--info);"></i> Import history</span>
+    <button class="modal-close" onclick="closeImportModal()"><i class="ti ti-x"></i></button>
   </div>
-  <input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleImportFile(this.files[0])">
-  <div id="import-preview" style="margin-top:12px;"></div>
+
+  <!-- Tab switcher -->
+  <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;">
+    <button class="btn" id="import-tab-local" onclick="switchImportTab('local')" style="flex:1;border-radius:0;border:none;background:var(--accent);color:#fff;font-weight:600;">
+      <i class="ti ti-upload"></i> Upload files
+    </button>
+    <button class="btn" id="import-tab-drive" onclick="switchImportTab('drive')" style="flex:1;border-radius:0;border:none;">
+      <i class="ti ti-brand-google-drive"></i> Browse Drive
+    </button>
+  </div>
+
+  <!-- LOCAL UPLOAD PANEL -->
+  <div id="import-panel-local">
+    <div class="import-zone" id="import-zone" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFiles(event)" onclick="document.getElementById('import-file').click()">
+      <i class="ti ti-files" style="font-size:32px;margin-bottom:8px;display:block;"></i>
+      <strong>Drop files here or click to browse</strong>
+      <div style="font-size:11px;margin-top:5px;color:var(--text3);">Select multiple Excel or CSV files at once. Each file is matched to a month by its filename (e.g. "Jun 2026 — Budget Tracker.xlsx").</div>
+    </div>
+    <input type="file" id="import-file" accept=".csv,.xlsx,.xls" multiple style="display:none;" onchange="handleImportFiles(this.files)">
+    <div id="import-local-preview" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- DRIVE BROWSER PANEL -->
+  <div id="import-panel-drive" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <span style="font-size:12px;color:var(--text2);">Files in <strong>Budget Planner — Monthly Archives</strong></span>
+      <button class="btn btn-sm" onclick="loadDriveFiles()"><i class="ti ti-refresh"></i> Refresh</button>
+    </div>
+    <div id="drive-files-list" style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-height:120px;">
+      <div class="empty-state" id="drive-files-empty">
+        <i class="ti ti-cloud-off" style="font-size:24px;display:block;margin-bottom:8px;"></i>
+        Connect to Google first, then click Refresh to browse your Drive archive.
+      </div>
+    </div>
+    <div id="drive-selected-summary" style="font-size:11px;color:var(--text2);margin-top:8px;display:none;"></div>
+  </div>
+
   <div class="modal-footer">
-    <button class="btn" onclick="document.getElementById('import-overlay').classList.remove('open')">Cancel</button>
-    <button class="btn btn-accent" id="import-confirm-btn" style="display:none;" onclick="confirmImport()">Import</button>
+    <button class="btn" onclick="closeImportModal()">Cancel</button>
+    <button class="btn btn-accent" id="import-confirm-btn" style="display:none;" onclick="confirmImport()"><i class="ti ti-check"></i> Import selected</button>
   </div>
 </div>
 </div>
@@ -2334,80 +2369,344 @@ function checkAutoMonthSave(){
   carryForwardEvents();
 }
 
-// ── CSV IMPORT ───────────────────────────────────────────────────
-function openImportModal(){document.getElementById('import-overlay').classList.add('open');}
+// ── IMPORT MODAL ──────────────────────────────────────────────
+let importQueue=[];   // [{filename, monthKey, data, source}]
+let driveFilesList=[];
+let driveSelectedIds=new Set();
+let activeImportTab='local';
+
+function openImportModal(){
+  importQueue=[];driveFilesList=[];driveSelectedIds=new Set();
+  document.getElementById('import-local-preview').innerHTML='';
+  document.getElementById('import-confirm-btn').style.display='none';
+  document.getElementById('drive-files-list').innerHTML='<div class="empty-state"><i class="ti ti-cloud-off" style="font-size:24px;display:block;margin-bottom:8px;"></i>Connect to Google first, then click Refresh.</div>';
+  document.getElementById('drive-selected-summary').style.display='none';
+  switchImportTab('local');
+  document.getElementById('import-overlay').classList.add('open');
+}
+function closeImportModal(){
+  document.getElementById('import-overlay').classList.remove('open');
+  importQueue=[];driveSelectedIds=new Set();
+  document.getElementById('import-file').value='';
+}
+function switchImportTab(tab){
+  activeImportTab=tab;
+  document.getElementById('import-panel-local').style.display=tab==='local'?'block':'none';
+  document.getElementById('import-panel-drive').style.display=tab==='drive'?'block':'none';
+  document.getElementById('import-tab-local').style.cssText=tab==='local'?'flex:1;border-radius:0;border:none;background:var(--accent);color:#fff;font-weight:600;':'flex:1;border-radius:0;border:none;';
+  document.getElementById('import-tab-drive').style.cssText=tab==='drive'?'flex:1;border-radius:0;border:none;background:var(--accent);color:#fff;font-weight:600;':'flex:1;border-radius:0;border:none;';
+  if(tab==='drive'&&accessToken&&driveFilesList.length===0)loadDriveFiles();
+}
+
+// ── LOCAL BULK UPLOAD ──────────────────────────────────────────
 function dragOver(e){e.preventDefault();document.getElementById('import-zone').classList.add('drag-over');}
 function dragLeave(){document.getElementById('import-zone').classList.remove('drag-over');}
-function dropFile(e){e.preventDefault();document.getElementById('import-zone').classList.remove('drag-over');handleImportFile(e.dataTransfer.files[0]);}
-function handleImportFile(file){
-  if(!file)return;
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    try{
-      if(file.name.endsWith('.csv')){
-        parseImportCSV(ev.target.result);
-      } else if(file.name.endsWith('.xlsx')||file.name.endsWith('.xls')){
-        const wb=XLSX.read(ev.target.result,{type:'binary'});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        const csv=XLSX.utils.sheet_to_csv(ws);
-        parseImportCSV(csv);
+function dropFiles(e){e.preventDefault();document.getElementById('import-zone').classList.remove('drag-over');handleImportFiles(e.dataTransfer.files);}
+
+function handleImportFiles(files){
+  if(!files||!files.length)return;
+  importQueue=[];
+  const fileArr=Array.from(files);
+  let processed=0;
+  const preview=document.getElementById('import-local-preview');
+  preview.innerHTML=`<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Processing ${fileArr.length} file${fileArr.length>1?'s':''}...</div>`;
+  fileArr.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        let rows=[];
+        if(file.name.endsWith('.csv')){
+          rows=parseCSVtoRows(ev.target.result);
+        } else {
+          const wb=XLSX.read(ev.target.result,{type:'binary'});
+          // try Tracker sheet first, fall back to first sheet
+          const sheetName=wb.SheetNames.find(n=>n==='Tracker')||wb.SheetNames[0];
+          rows=parseCSVtoRows(XLSX.utils.sheet_to_csv(wb.Sheets[sheetName]));
+        }
+        // detect month from filename e.g. "Jun 2026 — Budget Tracker.xlsx"
+        const monthKey=detectMonthFromFilename(file.name);
+        importQueue.push({filename:file.name,monthKey,rows,source:'local'});
+      } catch(err){
+        importQueue.push({filename:file.name,monthKey:null,rows:[],source:'local',error:err.message});
       }
-    } catch(err){alert('Could not parse file: '+err.message);}
-  };
-  if(file.name.endsWith('.csv'))reader.readAsText(file);
-  else reader.readAsBinaryString(file);
+      processed++;
+      if(processed===fileArr.length)renderImportPreview();
+    };
+    if(file.name.endsWith('.csv'))reader.readAsText(file);
+    else reader.readAsBinaryString(file);
+  });
 }
-function parseImportCSV(csv){
+
+function detectMonthFromFilename(name){
+  // matches "Jun 2026", "June 2026", "2026-5", "May_2025" etc.
+  const monthNames=[...MS,...MONTHS];
+  for(let mi=0;mi<12;mi++){
+    const short=MS[mi],long=MONTHS[mi];
+    const yearMatch=name.match(new RegExp('(?:'+short+'|'+long+')[^0-9]*([0-9]{4})','i'));
+    if(yearMatch)return getTkey(mi,+yearMatch[1]);
+    const yearFirst=name.match(new RegExp('([0-9]{4})[^0-9]*(?:0?'+(mi+1)+'|'+short+'|'+long+')','i'));
+    if(yearFirst)return getTkey(mi,+yearFirst[1]);
+  }
+  return null;
+}
+
+function parseCSVtoRows(csv){
   const lines=csv.split('\n').filter(l=>l.trim());
-  if(lines.length<2){alert('File appears empty.');return;}
-  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase());
-  const rows=lines.slice(1).map(line=>{
-    const vals=line.split(',');
+  if(lines.length<2)return[];
+  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/"/g,''));
+  return lines.slice(1).map(line=>{
+    const vals=splitCSVLine(line);
     const row={};
     headers.forEach((h,i)=>row[h]=(vals[i]||'').trim().replace(/"/g,''));
     return row;
-  }).filter(r=>r.name||r.description||r.item);
-  importData=rows;
-  // try to match to existing items
-  const matched=rows.map(r=>{
-    const name=(r.name||r.description||r.item||'').toLowerCase();
-    const amount=parseFloat(r.amount||r.value||r.debit||r.credit||0)||0;
-    const matched=items.find(i=>i.name.toLowerCase().includes(name.split(' ')[0]));
-    return {raw:r,name:r.name||r.description||r.item,amount,matched:matched?.name||null};
   });
-  document.getElementById('import-preview').innerHTML=`
-    <div style="font-size:12px;font-weight:600;margin-bottom:8px;">${rows.length} rows found</div>
-    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);">
-      <table style="width:100%;font-size:11px;border-collapse:collapse;">
-        <thead><tr style="background:var(--surface2);"><th style="padding:5px 8px;text-align:left;">Name</th><th style="padding:5px 8px;text-align:right;">Amount</th><th style="padding:5px 8px;text-align:left;">Matched to</th></tr></thead>
-        <tbody>${matched.map(r=>`<tr style="border-bottom:1px solid var(--border2);">
-          <td style="padding:5px 8px;">${r.name}</td>
-          <td style="padding:5px 8px;text-align:right;">${fmt(r.amount)}</td>
-          <td style="padding:5px 8px;color:${r.matched?'var(--accent)':'var(--text3)'};">${r.matched||'— no match'}</td>
-        </tr>`).join('')}</tbody>
-      </table>
+}
+function splitCSVLine(line){
+  const result=[];let cur='';let inQ=false;
+  for(let i=0;i<line.length;i++){
+    if(line[i]==='"')inQ=!inQ;
+    else if(line[i]===','&&!inQ){result.push(cur);cur='';}
+    else cur+=line[i];
+  }
+  result.push(cur);return result;
+}
+
+function renderImportPreview(){
+  const el=document.getElementById('import-local-preview');
+  if(!importQueue.length){el.innerHTML='';return;}
+  let html=`<div style="font-size:12px;font-weight:600;margin-bottom:10px;">${importQueue.length} file${importQueue.length>1?'s':''} ready to import:</div>`;
+  importQueue.forEach((f,fi)=>{
+    const statusColor=f.error?'var(--danger)':f.monthKey?'var(--accent)':'var(--warning)';
+    const statusText=f.error?'Error: '+f.error:f.monthKey?'→ '+keyToLabel(f.monthKey):'Month not detected — select manually';
+    html+=`<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span style="font-size:12px;font-weight:500;"><i class="ti ti-file-spreadsheet" style="color:var(--info);"></i> ${f.filename}</span>
+        <span style="font-size:10px;color:${statusColor};">${statusText}</span>
+      </div>
+      ${!f.monthKey&&!f.error?`<div style="margin-top:7px;display:flex;align-items:center;gap:7px;">
+        <span style="font-size:11px;color:var(--text2);">Assign to:</span>
+        <select class="form-select" style="width:auto;font-size:11px;" onchange="importQueue[${fi}].monthKey=this.value">
+          <option value="">— select month —</option>
+          ${generateMonthOptions()}
+        </select>
+      </div>`:''}
+      ${f.rows&&f.rows.length>0?`<div style="font-size:10px;color:var(--text3);margin-top:4px;">${f.rows.length} rows detected</div>`:''}
     </div>`;
+  });
+  el.innerHTML=html;
   document.getElementById('import-confirm-btn').style.display='';
 }
-function confirmImport(){
-  if(!importData)return;
-  const month=+document.getElementById('tracker-month').value;
-  const year=+document.getElementById('tracker-year').value;
-  const tkey=getTkey(month,year);
-  if(!trackerData[tkey])trackerData[tkey]={};
-  importData.forEach(r=>{
-    const name=(r.name||r.description||r.item||'').toLowerCase();
-    const amount=parseFloat(r.amount||r.value||r.debit||r.credit||0)||0;
-    const matchedItem=items.find(i=>i.name.toLowerCase().includes(name.split(' ')[0]));
-    if(matchedItem&&amount>0){
-      const prefix=matchedItem.type==='income'?'inc':'exp';
-      trackerData[tkey][prefix+'_'+matchedItem.id]=amount;
+
+function keyToLabel(key){const[y,m]=key.split('-');return MS[+m]+' '+y;}
+function generateMonthOptions(){
+  const now=new Date();
+  let opts='';
+  for(let y=now.getFullYear();y>=now.getFullYear()-3;y--){
+    for(let m=11;m>=0;m--){
+      opts+=`<option value="${getTkey(m,y)}">${MS[m]} ${y}</option>`;
+    }
+  }
+  return opts;
+}
+
+// ── DRIVE FILE BROWSER ─────────────────────────────────────────
+async function loadDriveFiles(){
+  if(!accessToken){
+    document.getElementById('drive-files-list').innerHTML='<div class="empty-state"><i class="ti ti-plug" style="font-size:22px;display:block;margin-bottom:8px;"></i>Not connected. Use the Connect button in the sync bar first.</div>';
+    return;
+  }
+  document.getElementById('drive-files-list').innerHTML='<div class="empty-state"><i class="ti ti-loader" style="font-size:22px;display:block;margin-bottom:8px;animation:spin 1s linear infinite;"></i>Loading files from Drive...</div>';
+  try{
+    const res=await apiCall('GET',
+      `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDER_ID}'+in+parents+and+trashed=false&fields=files(id,name,size,modifiedTime,mimeType)&orderBy=name+desc&pageSize=100`
+    );
+    driveFilesList=res.files||[];
+    renderDriveFilesList();
+  } catch(e){
+    document.getElementById('drive-files-list').innerHTML=`<div class="empty-state" style="color:var(--danger);">Failed to load: ${e.message.slice(0,80)}</div>`;
+  }
+}
+
+function renderDriveFilesList(){
+  const el=document.getElementById('drive-files-list');
+  if(!driveFilesList.length){
+    el.innerHTML='<div class="empty-state"><i class="ti ti-archive" style="font-size:22px;display:block;margin-bottom:8px;"></i>No files found in the archive folder yet. Save a month first.</div>';
+    return;
+  }
+  const excelFiles=driveFilesList.filter(f=>f.name.endsWith('.xlsx')||f.name.endsWith('.xls')||f.name.endsWith('.csv'));
+  el.innerHTML=`
+    <div style="background:var(--surface2);padding:7px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);">
+      <input type="checkbox" id="drive-select-all" style="accent-color:var(--accent);" onchange="driveSelectAll(this.checked)">
+      <label for="drive-select-all" style="cursor:pointer;">${excelFiles.length} file${excelFiles.length!==1?'s':''} — select all</label>
+    </div>
+    ${excelFiles.map(f=>{
+      const monthKey=detectMonthFromFilename(f.name);
+      const size=f.size?Math.round(f.size/1024)+'kb':'';
+      const modified=f.modifiedTime?new Date(f.modifiedTime).toLocaleDateString('en-LK'):'';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border2);font-size:12px;" id="drow-${f.id}">
+        <input type="checkbox" style="accent-color:var(--accent);" ${driveSelectedIds.has(f.id)?'checked':''} onchange="toggleDriveFile('${f.id}',this.checked)">
+        <i class="ti ti-file-spreadsheet" style="color:var(--info);flex-shrink:0;"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.name}</div>
+          <div style="font-size:10px;color:var(--text3);">${monthKey?keyToLabel(monthKey):' month unknown'} · ${modified} · ${size}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-sm btn-ghost" onclick="downloadDriveFile('${f.id}','${f.name}')" title="Download"><i class="ti ti-download" style="font-size:11px;"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="deleteDriveFile('${f.id}','${f.name}')" title="Delete"><i class="ti ti-trash" style="font-size:11px;"></i></button>
+        </div>
+      </div>`;
+    }).join('')}`;
+  updateDriveSelectedSummary();
+}
+
+function toggleDriveFile(id,checked){
+  if(checked)driveSelectedIds.add(id);
+  else driveSelectedIds.delete(id);
+  updateDriveSelectedSummary();
+}
+function driveSelectAll(checked){
+  driveFilesList.filter(f=>f.name.endsWith('.xlsx')||f.name.endsWith('.xls')||f.name.endsWith('.csv')).forEach(f=>{
+    if(checked)driveSelectedIds.add(f.id);
+    else driveSelectedIds.delete(f.id);
+  });
+  renderDriveFilesList();
+}
+function updateDriveSelectedSummary(){
+  const n=driveSelectedIds.size;
+  const sumEl=document.getElementById('drive-selected-summary');
+  const btn=document.getElementById('import-confirm-btn');
+  if(n>0){
+    sumEl.style.display='block';
+    sumEl.textContent=`${n} file${n>1?'s':''} selected for import.`;
+    btn.style.display='';
+  } else {
+    sumEl.style.display='none';
+    btn.style.display=importQueue.length?'':'none';
+  }
+}
+
+async function downloadDriveFile(fileId,fileName){
+  if(!accessToken)return;
+  try{
+    const res=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{
+      headers:{'Authorization':'Bearer '+accessToken}
+    });
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch(e){alert('Download failed: '+e.message);}
+}
+
+async function deleteDriveFile(fileId,fileName){
+  if(!confirm(`Delete "${fileName}" from Drive? This cannot be undone.`))return;
+  if(!accessToken)return;
+  try{
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`,{
+      method:'DELETE',headers:{'Authorization':'Bearer '+accessToken}
+    });
+    driveFilesList=driveFilesList.filter(f=>f.id!==fileId);
+    driveSelectedIds.delete(fileId);
+    renderDriveFilesList();
+  } catch(e){alert('Delete failed: '+e.message);}
+}
+
+// ── CONFIRM IMPORT ─────────────────────────────────────────────
+async function confirmImport(){
+  let imported=0,skipped=0;
+
+  // Process local files
+  for(const f of importQueue){
+    if(!f.monthKey||f.error)continue;
+    processImportRows(f.rows,f.monthKey);
+    imported++;
+  }
+
+  // Process Drive files
+  if(activeImportTab==='drive'&&driveSelectedIds.size>0){
+    const selectedFiles=driveFilesList.filter(f=>driveSelectedIds.has(f.id));
+    for(const f of selectedFiles){
+      const monthKey=detectMonthFromFilename(f.name);
+      if(!monthKey){skipped++;continue;}
+      try{
+        const res=await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`,{
+          headers:{'Authorization':'Bearer '+accessToken}
+        });
+        const buf=await res.arrayBuffer();
+        const wb=XLSX.read(buf,{type:'array'});
+        const sheetName=wb.SheetNames.find(n=>n==='Tracker')||wb.SheetNames[0];
+        const rows=parseCSVtoRows(XLSX.utils.sheet_to_csv(wb.Sheets[sheetName]));
+        processImportRows(rows,monthKey);
+        imported++;
+      } catch(e){skipped++;}
+    }
+  }
+
+  closeImportModal();
+  if(imported>0){
+    renderInsights();
+    if(document.getElementById('tab-tracker').classList.contains('active'))renderTracker();
+    addNotification('success',`Imported ${imported} month${imported>1?'s':''} of history.${skipped?` (${skipped} skipped)`:''}`,null);
+  }
+  alert(`Import complete.\n✅ ${imported} month${imported>1?'s':''} imported.${skipped?`\n⚠️ ${skipped} skipped (month not detected).`:''}`);
+}
+
+function processImportRows(rows,monthKey){
+  // detect if this is a budget-tracker export (has Budget/Actual columns)
+  // or a bank statement (has name/amount columns)
+  const headers=rows.length>0?Object.keys(rows[0]).map(h=>h.toLowerCase()):[];
+  const isBudgetExport=headers.includes('budget')||headers.includes('budget (lkr)')||headers.includes('actual');
+  if(isBudgetExport){
+    importBudgetExport(rows,monthKey);
+  } else {
+    importBankStatement(rows,monthKey);
+  }
+  // snapshot for history
+  const[y,m]=monthKey.split('-');
+  if(!monthHistory[monthKey]){
+    monthHistory[monthKey]={
+      totalIncome:totalIncome('shared'),totalExpenses:totalExpenses('shared'),
+      balance:totalIncome('shared')-totalExpenses('shared'),
+      totalSaved:totalSavingsTagged(),
+      perPerson:{trevin:{expenses:totalExpenses('trevin'),income:totalIncome('trevin')},dulini:{expenses:totalExpenses('dulini'),income:totalIncome('dulini')}},
+      imported:true
+    };
+  }
+}
+
+function importBudgetExport(rows,monthKey){
+  if(!trackerData[monthKey])trackerData[monthKey]={};
+  const td=trackerData[monthKey];
+  rows.forEach(row=>{
+    const name=(row['item']||row['name']||row['']||'').trim().toLowerCase();
+    const actual=parseFloat(row['actual']||row['actual (lkr)']||0)||0;
+    if(!name||!actual)return;
+    const matchedItem=items.find(i=>i.name.toLowerCase()===name||i.name.toLowerCase().includes(name.split(' ')[0]));
+    if(matchedItem&&actual>0){
+      const prefix=matchedItem.type==='income'?'inc_':'exp_';
+      td[prefix+matchedItem.id]=actual;
     }
   });
-  document.getElementById('import-overlay').classList.remove('open');
-  importData=null;
-  renderTracker();
-  alert('Import complete. Check the Tracker tab for matched actuals.');
+}
+
+function importBankStatement(rows,monthKey){
+  if(!trackerData[monthKey])trackerData[monthKey]={};
+  const td=trackerData[monthKey];
+  rows.forEach(row=>{
+    const name=(row['name']||row['description']||row['narration']||row['particular']||'').trim().toLowerCase();
+    const amount=parseFloat(row['amount']||row['debit']||row['credit']||row['value']||0)||0;
+    if(!name||!amount)return;
+    const matchedItem=items.find(i=>{
+      const n=i.name.toLowerCase();
+      return n===name||name.includes(n.split(' ')[0])||n.includes(name.split(' ')[0]);
+    });
+    if(matchedItem&&amount>0){
+      const prefix=matchedItem.type==='income'?'inc_':'exp_';
+      td[prefix+matchedItem.id]=amount;
+    }
+  });
 }
 
 // ── TAX ESTIMATOR ────────────────────────────────────────────────
