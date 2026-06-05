@@ -1,0 +1,90 @@
+// ── RESTORE STATE (on load from saved file) ───────────────────────
+let lastUpdated = Date.now();
+if(typeof _SI!=='undefined'&&_SI.length)items=_SI;
+if(typeof _ST!=='undefined')trackerData=_ST;
+if(typeof _SS!=='undefined')savingsStreams=_SS;
+if(typeof _SIn!=='undefined')instruments=_SIn;
+if(typeof _SE!=='undefined')txEvents=_SE;
+if(typeof _SH!=='undefined')monthHistory=_SH;
+if(typeof _SN!=='undefined')monthNotes=_SN;
+if(typeof _SB!=='undefined')accountBalance=_SB;
+if(typeof _SC!=='undefined')connections=_SC;
+if(typeof _ST2!=='undefined')templates=_ST2;
+if(typeof _SSL!=='undefined')settlementHistory=_SSL;
+if(typeof _CUR!=='undefined'){currencySymbol=_CUR.symbol;currencyLocale=_CUR.locale;}
+if(typeof _DARK!=='undefined')isDarkTheme=_DARK;
+let fileUpdated = typeof _LU!=='undefined' ? _LU : 0;
+
+// ── LOCAL STORAGE PERSISTENCE ────────────────────────────────────
+function loadLocalState() {
+  try {
+    const raw = localStorage.getItem('bp_state');
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    // Only override if local storage is newer than the injected file data
+    if (s.lastUpdated && s.lastUpdated > fileUpdated) {
+      if(s.items) items = s.items;
+      if(s.trackerData) trackerData = s.trackerData;
+      if(s.savingsStreams) savingsStreams = s.savingsStreams;
+      if(s.instruments) instruments = s.instruments;
+      if(s.txEvents) txEvents = s.txEvents;
+      if(s.monthHistory) monthHistory = s.monthHistory;
+      if(s.monthNotes) monthNotes = s.monthNotes;
+      if(s.accountBalance !== undefined) accountBalance = s.accountBalance;
+      if(s.connections) connections = s.connections;
+      if(s.templates) templates = s.templates;
+      if(s.settlementHistory) settlementHistory = s.settlementHistory;
+      if(s.currencySymbol) currencySymbol = s.currencySymbol;
+      if(s.currencyLocale) currencyLocale = s.currencyLocale;
+      if(s.isDarkTheme !== undefined) isDarkTheme = s.isDarkTheme;
+      lastUpdated = s.lastUpdated;
+    }
+  } catch(e) { console.error('Local load failed', e); }
+}
+
+let saveTimeout;
+function requestSave() {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    lastUpdated = Date.now();
+    const state = {
+      lastUpdated, items, trackerData, savingsStreams, instruments, txEvents,
+      monthHistory, monthNotes, accountBalance, connections, templates, settlementHistory,
+      currencySymbol, currencyLocale, isDarkTheme
+    };
+    localStorage.setItem('bp_state', JSON.stringify(state));
+  }, 500);
+}
+
+// Intercept rendering events to quietly trigger an auto-save
+const ogRecalc = recalc; recalc = (...args) => { ogRecalc(...args); requestSave(); };
+const ogRenderTracker = renderTracker; renderTracker = (...args) => { ogRenderTracker(...args); requestSave(); };
+const ogRenderEvents = renderEvents; renderEvents = (...args) => { ogRenderEvents(...args); requestSave(); };
+const ogRenderSavings = renderSavings; renderSavings = (...args) => { ogRenderSavings(...args); requestSave(); };
+const ogRenderInstruments = renderInstruments; renderInstruments = (...args) => { ogRenderInstruments(...args); requestSave(); };
+const ogSaveMonth = saveMonthToAll; saveMonthToAll = (...args) => { ogSaveMonth(...args); requestSave(); };
+
+// ── INIT ─────────────────────────────────────────────────────────
+(function init(){
+  loadLocalState(); // Restore local data silently on boot
+  applyTheme();
+  initTracker();
+  recalc();
+  updateEventsBadge();
+  buildNotifications();
+  renderTemplates();
+  if(connections.length&&connections[0].id==='default'){
+    connections[0].clientId=DEFAULT_CLIENT_ID;
+    connections[0].sheetId=SPREADSHEET_ID;
+    connections[0].sheetName=DEFAULT_SHEET_NAME;
+  }
+  document.getElementById('currency-badge').textContent=currencySymbol;
+  document.getElementById('currency-badge').addEventListener('click',()=>{
+    document.getElementById('currency-symbol').value=currencySymbol;
+    document.getElementById('currency-locale').value=currencyLocale;
+    document.getElementById('currency-overlay').classList.add('open');
+  });
+})();
+</script>
+</body>
+</html>
