@@ -882,11 +882,20 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 <div class="modal-overlay" id="import-overlay" onclick="if(event.target===this)document.getElementById('import-overlay').classList.remove('open')">
 <div class="modal">
   <div class="modal-head"><span class="modal-title"><i class="ti ti-upload" style="color:var(--info);"></i> Import history / bank statement</span><button class="modal-close" onclick="document.getElementById('import-overlay').classList.remove('open')"><i class="ti ti-x"></i></button></div>
+  
   <div class="import-zone" id="import-zone" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)" onclick="document.getElementById('import-file').click()">
     <i class="ti ti-file-spreadsheet" style="font-size:28px;margin-bottom:8px;display:block;"></i>
-    Drop a CSV or Excel file here, or click to browse.<br><span style="font-size:10px;margin-top:4px;display:block;">Bank statement CSV or a previous month's export.</span>
+    Drop a CSV or Excel file here, or click to browse local files.<br><span style="font-size:10px;margin-top:4px;display:block;">Bank statement CSV or a previous month's export.</span>
   </div>
   <input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleImportFile(this.files[0])">
+
+<button class="btn btn-sm btn-accent" style="margin-top:12px; width: 100%; justify-content: center;" onclick="fetchFromDrive()"><i class="ti ti-brand-google-drive"></i> Browse Designated Google Drive Folder</button>
+<div id="drive-file-list" style="margin-top:12px; display:none; max-height:160px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;"></div>
+  
+  <!-- NEW: Google Drive Browse Button -->
+  <button class="btn btn-sm btn-accent" style="margin-top:12px; width: 100%; justify-content: center;" onclick="fetchFromDrive()"><i class="ti ti-brand-google-drive"></i> Browse Designated Google Drive Folder</button>
+  <div id="drive-file-list" style="margin-top:12px; display:none; max-height:160px; overflow-y:auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;"></div>
+
   <div id="import-preview" style="margin-top:12px;"></div>
   <div class="modal-footer">
     <button class="btn" onclick="document.getElementById('import-overlay').classList.remove('open')">Cancel</button>
@@ -1464,6 +1473,71 @@ function saveBalance(){
   accountBalance=+document.getElementById('balance-input').value||0;
   document.getElementById('balance-overlay').classList.remove('open');
   renderCashFlow();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+(function init(){
+  applyTheme();
+  initTracker();
+// ── GOOGLE DRIVE IMPORT ──────────────────────────────────────────
+async function fetchFromDrive() {
+  if (!accessToken) { 
+    alert('You must connect to Google first!'); 
+    return; 
+  }
+  
+  const listContainer = document.getElementById('drive-file-list');
+  listContainer.style.display = 'block'; 
+  listContainer.innerHTML = '<div style="text-align:center; padding:10px; color:var(--text2);"><i class="ti ti-loader"></i> Fetching files from Drive...</div>';
+  
+  try {
+    const query = `'${DRIVE_FOLDER_ID}' in parents and trashed=false`;
+    const res = await apiCall('GET', `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime)&orderBy=createdTime desc`);
+    
+    if (!res.files || res.files.length === 0) {
+      listContainer.innerHTML = '<div style="color:var(--warning);">No files found in your designated Drive folder.</div>';
+      return;
+    }
+
+    listContainer.innerHTML = `
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Select a file from Drive:</div>
+      ${res.files.map(f => `
+        <div style="padding:8px 10px; border-bottom:1px solid var(--border2); cursor:pointer; font-size:12px; transition:background 0.15s;" 
+             onmouseover="this.style.background='var(--surface2)'" 
+             onmouseout="this.style.background='transparent'"
+             onclick="downloadDriveFile('${f.id}', '${f.name}')">
+          <i class="ti ti-file-spreadsheet" style="color:var(--accent); margin-right:5px;"></i> ${f.name}
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    listContainer.innerHTML = '<div style="color:var(--danger);">Error fetching from Drive: ' + e.message + '</div>';
+  }
+}
+
+async function downloadDriveFile(fileId, fileName) {
+  const listContainer = document.getElementById('drive-file-list');
+  listContainer.innerHTML = `<div style="text-align:center; padding:10px; color:var(--text2);"><i class="ti ti-loader"></i> Downloading ${fileName}...</div>`;
+  
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    
+    if (!res.ok) throw new Error('Download failed');
+    
+    const blob = await res.blob();
+    const file = new File([blob], fileName, { type: blob.type });
+    
+    handleImportFile(file); 
+    
+    setTimeout(() => { 
+      listContainer.style.display = 'none'; 
+    }, 1500);
+    
+  } catch (e) {
+    listContainer.innerHTML = '<div style="color:var(--danger);">Failed to download: ' + e.message + '</div>';
+  }
 }
 
 // ── TRACKER ──────────────────────────────────────────────────────
