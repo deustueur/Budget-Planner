@@ -256,7 +256,11 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 .instr-chart-wrap{height:85px;margin-top:8px;}
 
 /* INSIGHTS */
-.history-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:7px;margin-bottom:14px;}
+.history-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;margin-bottom:10px;}
+@media(max-width:768px){.history-grid{grid-template-columns:repeat(6,1fr);}}
+.history-card.excluded{opacity:0.4;border-style:dashed !important;}
+#global-save-btn.dirty{animation:savePulse 2s infinite;}
+@keyframes savePulse{0%,100%{opacity:1;}50%{opacity:0.7;}}
 .history-card{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:9px;cursor:pointer;transition:all .15s;text-align:center;}
 .history-card:hover,.history-card.hactive{border-color:var(--accent);background:var(--accent-light);}
 .history-card.empty{opacity:.35;cursor:default;pointer-events:none;}
@@ -950,7 +954,9 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 const SPREADSHEET_ID='1q11IV9GWDJsP5f28eO9oxzKk9bzN35zsAvmM6dUp8DM';
 const DEFAULT_CLIENT_ID='42738927572-p2fkpm7vetktvdcqj3hdeprkm2ccmjrd.apps.googleusercontent.com';
 const DEFAULT_SHEET_NAME='Dynamic Budget Planner';
-const DRIVE_FOLDER_ID='1Db6ijJ1tahblilXh98r6XGvp4WCLuNSf';
+const DRIVE_FOLDER_ID='1h1N9FxY0WZGcXWwUGjBGz5Jf1PPozIXk'; // monthly CSV/Excel archive
+const STATE_FOLDER_ID='1bRgzrxmEcFQeKICx611sg4HY3XlzEDiE'; // state.json persistent storage
+const STATE_FILENAME='bp_state.json';
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const CAT_COLORS={obligations:'#378ADD',transport:'#BA7517',lifestyle:'#7F77DD',wellbeing:'#1D9E75',subscriptions:'#D4537E',other:'#888780'};
@@ -2657,23 +2663,26 @@ function processImportRows(rows,monthKey){
   // detect if this is a budget-tracker export (has Budget/Actual columns)
   // or a bank statement (has name/amount columns)
   const headers=rows.length>0?Object.keys(rows[0]).map(h=>h.toLowerCase()):[];
-  const isBudgetExport=headers.includes('budget')||headers.includes('budget (lkr)')||headers.includes('actual');
+  const isBudgetExport=headers.some(h=>h.includes('budget')||h.includes('actual'))||
+    rows.some(r=>{const v=Object.values(r);return v.some(x=>/^INCOME$/i.test(x)||/^EXPENSES?$/i.test(x));});
   if(isBudgetExport){
     importBudgetExport(rows,monthKey);
   } else {
     importBankStatement(rows,monthKey);
+    // write basic monthHistory entry for bank imports too
+    if(!monthHistory[monthKey]){
+      monthHistory[monthKey]={
+        totalIncome:totalIncome('shared'),totalExpenses:totalExpenses('shared'),
+        balance:totalIncome('shared')-totalExpenses('shared'),
+        totalSaved:totalSavingsTagged(),
+        perPerson:{trevin:{expenses:totalExpenses('trevin'),income:totalIncome('trevin')},
+          dulini:{expenses:totalExpenses('dulini'),income:totalIncome('dulini')}},
+        imported:true,included:true
+      };
+    }
   }
-  // snapshot for history
-  const[y,m]=monthKey.split('-');
-  if(!monthHistory[monthKey]){
-    monthHistory[monthKey]={
-      totalIncome:totalIncome('shared'),totalExpenses:totalExpenses('shared'),
-      balance:totalIncome('shared')-totalExpenses('shared'),
-      totalSaved:totalSavingsTagged(),
-      perPerson:{trevin:{expenses:totalExpenses('trevin'),income:totalIncome('trevin')},dulini:{expenses:totalExpenses('dulini'),income:totalIncome('dulini')}},
-      imported:true
-    };
-  }
+  // auto-generate pending events from imported actuals
+  autoGenerateEventsFromTracker(monthKey);
 }
 
 function importBudgetExport(rows,monthKey){
@@ -3453,15 +3462,15 @@ function connectWith(connId){
           accessToken=resp.access_token;
           conn.active=true;
           closeConnModal();
-          setSyncStatus('connected','Connected — '+conn.sheetName);
+          setSyncStatus('connected','Connected — '+conn.sheetName+' (use Pull/Push to sync)');
           document.getElementById('btn-pull').style.display='';
           document.getElementById('btn-push').style.display='';
           document.getElementById('btn-overwrite').style.display='';
           document.getElementById('btn-cal').style.display='';
           document.getElementById('btn-connect').innerHTML='<i class="ti ti-plug"></i> Connections';
           startPolling();
-          sheetsPull();
-          checkAutoMonthSave();
+          // Connect only — no auto pull/push. User decides when to sync.
+          loadStateFromDrive(); // restore state from Drive JSON if available
         }
       });
       tokenClient.requestAccessToken({prompt:'consent'});
@@ -3543,28 +3552,635 @@ if(typeof _SSL!=='undefined')settlementHistory=_SSL;
 if(typeof _CUR!=='undefined'){currencySymbol=_CUR.symbol;currencyLocale=_CUR.locale;}
 if(typeof _DARK!=='undefined')isDarkTheme=_DARK;
 
-// ── INIT ─────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+// DRIVE STATE — save/load state.json to Drive folder
+// ════════════════════════════════════════════════════════════════
+function buildStatePayload(){
+  return JSON.stringify({items,trackerData,savingsStreams,instruments,txEvents,monthHistory,
+    monthNotes,accountBalance,connections,templates,settlementHistory,
+    currencySymbol,currencyLocale,isDarkTheme});
+}
+
+async function saveStateToDrive(){
+  if(!accessToken)return;
+  try{
+    const payload=buildStatePayload();
+    const blob=new Blob([payload],{type:'application/json'});
+    // check if file exists
+    const search=await apiCall('GET',`https://www.googleapis.com/drive/v3/files?q=name='${STATE_FILENAME}'+and+'${STATE_FOLDER_ID}'+in+parents+and+trashed=false&fields=files(id)`);
+    const existing=search.files?.[0];
+    if(existing){
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`,{
+        method:'PATCH',headers:{'Authorization':'Bearer '+accessToken,'Content-Type':'application/json'},body:blob
+      });
+    } else {
+      const meta={name:STATE_FILENAME,parents:[STATE_FOLDER_ID],mimeType:'application/json'};
+      const form=new FormData();
+      form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+      form.append('file',blob,STATE_FILENAME);
+      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+        method:'POST',headers:{'Authorization':'Bearer '+accessToken},body:form
+      });
+    }
+    // also save to localStorage as fallback
+    localStorage.setItem('bp_state',payload);
+    localStorage.setItem('bp_state_ts',Date.now());
+  } catch(e){
+    // silently fall back to localStorage only
+    localStorage.setItem('bp_state',buildStatePayload());
+  }
+}
+
+async function loadStateFromDrive(){
+  if(!accessToken)return;
+  try{
+    setSyncStatus('syncing','Loading saved state...');
+    const search=await apiCall('GET',`https://www.googleapis.com/drive/v3/files?q=name='${STATE_FILENAME}'+and+'${STATE_FOLDER_ID}'+in+parents+and+trashed=false&fields=files(id,modifiedTime)`);
+    const file=search.files?.[0];
+    if(!file){setSyncStatus('connected','Connected — no saved state found');return;}
+    const res=await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,{
+      headers:{'Authorization':'Bearer '+accessToken}
+    });
+    const data=await res.json();
+    applyStatePayload(data);
+    setSyncStatus('connected','State restored from Drive');
+    markDirty(false);
+  } catch(e){
+    setSyncStatus('connected','Connected (state load failed)');
+  }
+}
+
+function applyStatePayload(data){
+  if(data.items?.length)items=data.items;
+  if(data.trackerData)trackerData=data.trackerData;
+  if(data.savingsStreams)savingsStreams=data.savingsStreams;
+  if(data.instruments)instruments=data.instruments;
+  if(data.txEvents)txEvents=data.txEvents;
+  if(data.monthHistory)monthHistory=data.monthHistory;
+  if(data.monthNotes)monthNotes=data.monthNotes;
+  if(data.accountBalance!=null)accountBalance=data.accountBalance;
+  if(data.templates)templates=data.templates;
+  if(data.settlementHistory)settlementHistory=data.settlementHistory;
+  if(data.currencySymbol)currencySymbol=data.currencySymbol;
+  if(data.currencyLocale)currencyLocale=data.currencyLocale;
+  if(data.isDarkTheme!=null){isDarkTheme=data.isDarkTheme;applyTheme();}
+  recalc();updateEventsBadge();buildNotifications();renderTemplates();
+  document.getElementById('currency-badge').textContent=currencySymbol;
+}
+
+// ── DIRTY STATE + SAVE BUTTON ────────────────────────────────────
+let _isDirty=false;
+let _saveDebounce=null;
+
+function markDirty(dirty=true){
+  _isDirty=dirty;
+  const btn=document.getElementById('global-save-btn');
+  if(btn){
+    btn.style.background=dirty?'var(--warning)':'var(--accent)';
+    btn.style.borderColor=dirty?'var(--warning)':'var(--accent-dark)';
+    btn.title=dirty?'Unsaved changes — click to save':'All saved';
+    btn.innerHTML=dirty?'<i class="ti ti-device-floppy"></i> Save*':'<i class="ti ti-check"></i> Saved';
+  }
+  if(dirty){
+    // auto-save to localStorage immediately
+    localStorage.setItem('bp_state',buildStatePayload());
+    localStorage.setItem('bp_state_ts',Date.now());
+    // debounce Drive save
+    if(_saveDebounce)clearTimeout(_saveDebounce);
+    _saveDebounce=setTimeout(()=>{saveStateToDrive();markDirty(false);},3000);
+  }
+}
+
+async function globalSave(){
+  setSyncStatus('syncing','Saving...');
+  // 1. Save state to Drive JSON
+  await saveStateToDrive();
+  // 2. Push to Sheet if connected
+  if(accessToken){
+    await sheetsPush();
+  }
+  // 3. Download updated index.html
+  downloadFile();
+  markDirty(false);
+  setSyncStatus('connected',accessToken?'Saved to Drive & Sheet':'Saved locally');
+  addNotification('success','All data saved.',null);
+}
+
+// Patch recalc to mark dirty — use flag to avoid re-entry
+const _origRecalc=recalc;
+let _inRecalc=false;
+function recalc(){
+  if(_inRecalc)return;
+  _inRecalc=true;
+  _origRecalc();
+  _inRecalc=false;
+  markDirty();
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: OPEN TAGS & CATEGORIES (issue 3)
+// ════════════════════════════════════════════════════════════════
+// Custom purpose tags and categories stored in state
+let customPurposeTags=[]; // [{value,label,color}]
+let customCategories=[]; // strings
+
+function getAllPurposeTags(){
+  const defaults=[
+    {value:'saving',label:'💚 Saving',color:'saving'},
+    {value:'investment',label:'📈 Investment',color:'investment'},
+    {value:'loan',label:'🔴 Loan',color:'loan'},
+    {value:'fd',label:'🔵 Fixed Deposit',color:'fd'},
+    {value:'fund',label:'🟡 Fund',color:'fund'},
+  ];
+  return [...defaults,...customPurposeTags];
+}
+
+function getAllCategories(){
+  const defaults=['obligations','transport','lifestyle','wellbeing','subscriptions'];
+  const fromItems=[...new Set(items.filter(i=>i.type==='expense'&&i.cat).map(i=>i.cat))];
+  return [...new Set([...defaults,...fromItems,...customCategories])];
+}
+
+// Override populateCatSel to include custom + add-new
+function populateCatSel(){
+  const cats=getAllCategories();
+  document.getElementById('item-cat').innerHTML=
+    cats.map(c=>`<option value="${c}">${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('')+
+    '<option value="__new">+ New category...</option>';
+}
+
+// Override item-purpose select to be a datalist combo
+function buildPurposeDropdown(currentVal){
+  const tags=getAllPurposeTags();
+  let html=`<option value="">None</option>`;
+  tags.forEach(t=>html+=`<option value="${t.value}">${t.label}</option>`);
+  html+=`<option value="__new">+ New tag...</option>`;
+  const sel=document.getElementById('item-purpose');
+  if(sel){sel.innerHTML=html;sel.value=currentVal||'';}
+}
+
+// patch saveItem to handle __new purpose
+const _origSaveItem=saveItem;
+function saveItem(){
+  const purposeSel=document.getElementById('item-purpose');
+  if(purposeSel&&purposeSel.value==='__new'){
+    const tagName=prompt('New purpose tag name (e.g. "Car fund", "Education"):');
+    if(!tagName){purposeSel.value='';return;}
+    const value=tagName.toLowerCase().replace(/\s+/g,'_');
+    customPurposeTags.push({value,label:'🏷 '+tagName,color:'other'});
+    purposeSel.innerHTML=document.getElementById('item-purpose').innerHTML;
+    const opt=document.createElement('option');
+    opt.value=value;opt.textContent='🏷 '+tagName;
+    purposeSel.appendChild(opt);
+    purposeSel.value=value;
+    // add CSS for new badge
+    if(!document.querySelector(`style[data-custom-tag="${value}"]`)){
+      const s=document.createElement('style');
+      s.setAttribute('data-custom-tag',value);
+      s.textContent=`.purpose-badge.${value}{background:var(--surface3);color:var(--text2);border-color:var(--border);}`;
+      document.head.appendChild(s);
+    }
+  }
+  _origSaveItem();
+}
+
+// patch cyclePurpose to cycle through all tags including custom
+function cyclePurpose(id){
+  const allTags=['','saving','investment','loan','fd','fund',...customPurposeTags.map(t=>t.value)];
+  const item=items.find(i=>i.id===id);if(!item)return;
+  item.purpose=allTags[(allTags.indexOf(item.purpose||'')+1)%allTags.length];
+  recalc();
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: IMPORT PARSER — read actual structure from uploaded files (issues 2, 4)
+// ════════════════════════════════════════════════════════════════
+function importBudgetExport(rows,monthKey){
+  if(!trackerData[monthKey])trackerData[monthKey]={};
+  const td=trackerData[monthKey];
+  let section='income';
+  let incomeTotal=0,expenseTotal=0;
+
+  rows.forEach(row=>{
+    // get first cell value — could be under any column name
+    const vals=Object.values(row);
+    const firstCell=(vals[0]||'').toString().trim();
+    const secondCell=(vals[1]||'').toString().trim();
+
+    // detect section headers
+    if(/^INCOME$/i.test(firstCell)){section='income';return;}
+    if(/^EXPENSES?$/i.test(firstCell)){section='expense';return;}
+    if(/^(Total|Net|Balance|Budget)/i.test(firstCell))return;
+    if(!firstCell)return;
+
+    // get actual value — column index 2 (after name and budget)
+    const budgetVal=parseFloat(secondCell)||0;
+    const actualVal=parseFloat(vals[2]||0)||0;
+
+    if(!firstCell||isNaN(budgetVal))return;
+
+    // match to item by name
+    const nameLower=firstCell.toLowerCase();
+    const matchedItem=items.find(i=>{
+      const n=i.name.toLowerCase();
+      return n===nameLower||
+        n.replace(/\s+/g,'')===nameLower.replace(/\s+/g,'')||
+        nameLower.includes(n.split(' ')[0])||
+        n.includes(nameLower.split(' ')[0]);
+    });
+
+    if(matchedItem){
+      const prefix=matchedItem.type==='income'?'inc_':'exp_';
+      // use actual if present, else use budget value as actual
+      const useVal=actualVal>0?actualVal:budgetVal;
+      if(useVal>0)td[prefix+matchedItem.id]=useVal;
+      if(matchedItem.type==='income')incomeTotal+=useVal;
+      else expenseTotal+=useVal;
+    } else if(budgetVal>0||actualVal>0){
+      // item not in current list — add it
+      const newItem={
+        id:uid(),type:section,name:firstCell,
+        val:budgetVal||actualVal,freq:'monthly',
+        cat:section==='income'?'':'other',tag:'variable',
+        purpose:'',owner:'shared',on:true,
+        dueDay:0,bufferDays:0,
+        splitRatio:{trevin:50,dulini:50},
+        calEventId:null,history:[]
+      };
+      items.push(newItem);
+      const prefix=section==='income'?'inc_':'exp_';
+      if(actualVal>0)td[prefix+newItem.id]=actualVal;
+    }
+  });
+
+  // write to monthHistory with correct per-person data
+  monthHistory[monthKey]={
+    totalIncome:incomeTotal||totalIncome('shared'),
+    totalExpenses:expenseTotal||totalExpenses('shared'),
+    balance:(incomeTotal||totalIncome('shared'))-(expenseTotal||totalExpenses('shared')),
+    totalSaved:totalSavingsTagged(),
+    perPerson:{
+      trevin:{expenses:totalExpenses('trevin'),income:totalIncome('trevin')},
+      dulini:{expenses:totalExpenses('dulini'),income:totalIncome('dulini')}
+    },
+    tracker:td,
+    imported:true
+  };
+  markDirty();
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: HISTORY GRID — 12 per row, overflow to dropdown (issue 5)
+// ════════════════════════════════════════════════════════════════
+function renderHistoryGrid(){
+  const months=Object.keys(monthHistory).sort().reverse();
+  document.getElementById('history-count').textContent=months.length+' month'+(months.length!==1?'s':'');
+  const grid=document.getElementById('history-grid');
+  if(!months.length){
+    grid.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0;">No history yet. Import files or save a month in the Tracker.</div>';
+    return;
+  }
+  // First 12 shown as cards, rest in expandable list
+  const visible=months.slice(0,12);
+  const overflow=months.slice(12);
+
+  // force exactly 12-column grid
+  grid.style.gridTemplateColumns='repeat(12,1fr)';
+  grid.innerHTML=visible.map(key=>{
+    const h=monthHistory[key];
+    const bal=(h.totalIncome||0)-(h.totalExpenses||0);
+    const[y,m]=key.split('-');
+    const included=h.included!==false;
+    return `<div class="history-card ${included?'':'excluded'}" onclick="loadHistoryDetail('${key}',this)" style="${included?'':'opacity:0.4;border-style:dashed;'}" title="${included?'Click to view':'Excluded from insights'}">
+      <div style="font-size:11px;font-weight:600;">${MS[+m]}</div>
+      <div style="font-size:9px;color:var(--text3);">${y}</div>
+      <div style="font-size:10px;font-weight:600;margin-top:2px;color:${bal>=0?'var(--accent)':'var(--danger)'}">${bal>=0?'+':''}${fmt(bal)}</div>
+    </div>`;
+  }).join('');
+
+  // Overflow dropdown
+  if(overflow.length>0){
+    const overId='history-overflow-'+Date.now();
+    const overflowHtml=`<div style="margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+      <div style="padding:8px 12px;background:var(--surface2);display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:12px;font-weight:600;" onclick="document.getElementById('${overId}').style.display=document.getElementById('${overId}').style.display==='none'?'block':'none'">
+        <span>+ ${overflow.length} more months</span>
+        <i class="ti ti-chevron-down" style="font-size:12px;"></i>
+      </div>
+      <div id="${overId}" style="display:none;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead><tr style="background:var(--surface2);">
+            <th style="padding:6px 10px;text-align:left;">Month</th>
+            <th style="padding:6px 10px;text-align:right;">Balance</th>
+            <th style="padding:6px 10px;text-align:center;">In insights</th>
+            <th style="padding:6px 10px;text-align:right;">Actions</th>
+          </tr></thead>
+          <tbody>
+            ${overflow.map(key=>{
+              const h=monthHistory[key];
+              const bal=(h.totalIncome||0)-(h.totalExpenses||0);
+              const[y,m]=key.split('-');
+              const included=h.included!==false;
+              return `<tr style="border-bottom:1px solid var(--border2);">
+                <td style="padding:6px 10px;font-weight:500;">${MS[+m]} ${y}</td>
+                <td style="padding:6px 10px;text-align:right;color:${bal>=0?'var(--accent)':'var(--danger)'};">${fmtS(bal)}</td>
+                <td style="padding:6px 10px;text-align:center;"><input type="checkbox" ${included?'checked':''} onchange="toggleHistoryInclude('${key}',this.checked)" style="accent-color:var(--accent);"></td>
+                <td style="padding:6px 10px;text-align:right;display:flex;gap:5px;justify-content:flex-end;">
+                  <button class="btn btn-sm" onclick="loadHistoryDetail('${key}',null)"><i class="ti ti-eye"></i></button>
+                  <button class="btn btn-sm btn-danger" onclick="deleteHistoryMonth('${key}')"><i class="ti ti-trash"></i></button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+    grid.insertAdjacentHTML('afterend',overflowHtml);
+  }
+  renderPersonCharts();
+}
+
+function toggleHistoryInclude(key,checked){
+  if(monthHistory[key])monthHistory[key].included=checked;
+  renderSuggestions();markDirty();
+}
+
+function deleteHistoryMonth(key){
+  if(!confirm(`Delete history for ${keyToLabel(key)}?`))return;
+  delete monthHistory[key];
+  renderHistoryGrid();renderSuggestions();markDirty();
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: EVENTS — auto-generate pending events from tracker (issues 8, 9)
+// ════════════════════════════════════════════════════════════════
+function autoGenerateEventsFromTracker(monthKey){
+  if(!trackerData[monthKey])return;
+  const td=trackerData[monthKey];
+  const[y,m]=monthKey.split('-');
+  const dateLabel=MS[+m]+' '+y;
+  items.forEach(item=>{
+    const prefix=item.type==='income'?'inc_':'exp_';
+    const key=prefix+item.id;
+    const actual=td[key];
+    if(actual===undefined||actual==='')return;
+    const budget=item.on?Math.round(toMonthly(item.val,item.freq)):0;
+    const variance=item.type==='income'?actual-budget:budget-actual;
+    // check if event already exists
+    const exists=txEvents.find(e=>e.sourceKey===key&&e.month===+m&&e.year===+y);
+    if(exists)return;
+    // create pending event for any variance
+    txEvents.push({
+      id:uid(),sourceKey:key,sourceItem:item.name,
+      amount:variance,month:+m,year:+y,dateLabel,
+      status:variance===0?'settled':variance>0?'untagged':'overspend',
+      routeType:null,routeTarget:null,routeTargetName:'',
+      chain:[{label:item.name,amount:variance,date:dateLabel}],
+      created:Date.now(),auto:true
+    });
+  });
+  updateEventsBadge();
+}
+
+// Override renderTracker to show event status even when no event exists (issue 9)
+function buildSurplusPill(itemKey,variance,month,year,item){
+  // always show something in the event column
+  if(variance===null){
+    return `<span style="font-size:9px;color:var(--text3);padding:1px 5px;">no actual</span>`;
+  }
+  if(variance===0){
+    return `<span style="font-size:9px;color:var(--accent);padding:1px 5px;"><i class="ti ti-check"></i> on budget</span>`;
+  }
+  const existing=txEvents.find(e=>e.sourceKey===itemKey&&e.month===month&&e.year===year);
+  if(existing){
+    const c=existing.status==='tagged'?'var(--accent)':existing.status==='carried'?'var(--purple)':existing.status==='overspend'?'var(--danger)':'var(--warning)';
+    return `<span class="surplus-pill" style="background:${c}15;color:${c};border:1px solid ${c};cursor:pointer;" onclick="showTab('events')">
+      <i class="ti ti-git-branch" style="font-size:9px;"></i> ${existing.status}
+    </span>`;
+  }
+  const pos=variance>0;
+  return `<span class="surplus-pill ${pos?'positive':'negative'}" onclick="openRouteModal('${itemKey}',${variance},${month},${year},'${item?.id||''}','${item?.name||''}')">
+    <i class="ti ${pos?'ti-sparkles':'ti-alert-triangle'}" style="font-size:9px;"></i> ${pos?'+':'−'}${fmt(Math.abs(variance))} <span style="font-size:8px;opacity:0.7;">route</span>
+  </span>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: SAVINGS — auto-create stream for each saving-tagged item (issue 7)
+// ════════════════════════════════════════════════════════════════
+function ensureSavingStreams(){
+  items.filter(i=>i.on&&i.purpose==='saving').forEach(item=>{
+    const exists=savingsStreams.find(s=>s.linkedItemId===item.id||s.name.toLowerCase()===item.name.toLowerCase());
+    if(!exists){
+      savingsStreams.push({
+        id:uid(),name:item.name,
+        goal:0,color:'#1D9E75',
+        owner:item.owner||'shared',
+        balance:0,history:[],
+        linkedItemId:item.id
+      });
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: CASHFLOW — inline editing propagates everywhere (issue 10)
+// ════════════════════════════════════════════════════════════════
+function renderCashFlowEditable(){
+  // Re-render cashflow with editable item list
+  const el=document.getElementById('cf-event-list');
+  if(!el)return;
+  const events=[];
+  items.filter(i=>i.on&&i.dueDay>0).forEach(item=>{
+    const mv=Math.round(toMonthly(item.val,item.freq));
+    if(!mv)return;
+    events.push({day:item.dueDay,name:item.name,amount:mv,type:item.type,
+      owner:item.owner,daysUntil:getDaysUntil(item.dueDay),purpose:item.purpose,id:item.id});
+  });
+  events.sort((a,b)=>a.day-b.day);
+  if(!events.length){
+    el.innerHTML='<div class="empty-state">Set due days on items to see events. Click any item name or amount in the Dashboard to edit inline — changes reflect here immediately.</div>';
+    return;
+  }
+  el.innerHTML=`<table style="width:100%;font-size:12px;border-collapse:collapse;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase;">Day</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase;">Name</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase;">Amount</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase;">Owner</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase;">Purpose</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase;">Days away</th>
+    </tr></thead>
+    <tbody>${events.map(e=>`<tr style="border-bottom:1px solid var(--border2);" data-id="${e.id}">
+      <td style="padding:6px 8px;font-weight:600;">
+        <span class="tracker-editable" onclick="editCFDueDay('${e.id}',this)">Day ${e.day}</span>
+      </td>
+      <td style="padding:6px 8px;">
+        <span class="tracker-editable" onclick="editCFName('${e.id}',this)">${e.name}</span>
+      </td>
+      <td style="padding:6px 8px;" class="${e.type==='income'?'var-pos':'var-neg'}">
+        <span class="tracker-editable" onclick="editCFAmount('${e.id}',this)">${e.type==='income'?'+':'-'}${fmt(e.amount)}</span>
+      </td>
+      <td style="padding:6px 8px;">
+        <div class="owner-dot ${e.owner||'shared'}" style="display:inline-block;cursor:pointer;" onclick="cycleOwner('${e.id}')" title="Click to change owner"></div>
+        <span style="font-size:11px;color:var(--text2);margin-left:3px;">${e.owner||'shared'}</span>
+      </td>
+      <td style="padding:6px 8px;">
+        <span class="purpose-badge ${e.purpose?PC[e.purpose]||e.purpose:'add'}" onclick="cyclePurpose('${e.id}')" title="Click to change">
+          ${e.purpose?(PL[e.purpose]||e.purpose):'+ tag'}
+        </span>
+      </td>
+      <td style="padding:6px 8px;">${e.daysUntil===0?'<strong style="color:var(--danger);">TODAY</strong>':e.daysUntil===null?'—':e.daysUntil+'d'}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function editCFDueDay(id,el){
+  const item=items.find(i=>i.id===id);if(!item)return;
+  const inp=document.createElement('input');
+  inp.type='number';inp.value=item.dueDay||'';inp.min=1;inp.max=31;
+  inp.style.cssText='width:55px;padding:2px 4px;border:1px solid var(--accent);border-radius:4px;font-size:12px;';
+  inp.onblur=()=>{item.dueDay=+inp.value||0;recalc();renderCashFlow();};
+  inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();};
+  el.replaceWith(inp);inp.focus();
+}
+function editCFName(id,el){
+  const item=items.find(i=>i.id===id);if(!item)return;
+  const inp=document.createElement('input');inp.value=item.name;
+  inp.style.cssText='width:120px;padding:2px 4px;border:1px solid var(--accent);border-radius:4px;font-size:12px;';
+  inp.onblur=()=>{if(inp.value.trim()){logItemHistory(item,item.name,inp.value.trim(),'name');item.name=inp.value.trim();recalc();renderCashFlow();}else el.textContent=item.name;};
+  inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();};
+  el.replaceWith(inp);inp.focus();
+}
+function editCFAmount(id,el){
+  const item=items.find(i=>i.id===id);if(!item)return;
+  const inp=document.createElement('input');inp.type='number';inp.value=item.val;
+  inp.style.cssText='width:90px;padding:2px 4px;border:1px solid var(--accent);border-radius:4px;font-size:12px;';
+  inp.onblur=()=>{const nv=+inp.value||0;if(nv!==item.val){logItemHistory(item,item.val,nv,'amount');item.val=nv;recalc();renderCashFlow();}};
+  inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();};
+  el.replaceWith(inp);inp.focus();
+}
+
+// Patch renderCashFlow to call editable version at end
+const _origRenderCashFlow=renderCashFlow;
+function renderCashFlow(){
+  _origRenderCashFlow();
+  renderCashFlowEditable();
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: INSTRUMENTS — show even without full data (issue 6)
+// ════════════════════════════════════════════════════════════════
+const _origRenderInstruments=renderInstruments;
+function renderInstruments(){
+  _origRenderInstruments();
+  // Add helpful empty state if no instruments
+  const empty=document.getElementById('instruments-empty');
+  if(empty&&empty.style.display!=='none'){
+    empty.innerHTML=`<div style="text-align:center;padding:36px 18px;">
+      <i class="ti ti-chart-line" style="font-size:32px;color:var(--text3);margin-bottom:8px;display:block;"></i>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px;">No instruments yet</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">Add loans, fixed deposits, investments or stocks to track their progress and schedules.</div>
+      <button class="btn btn-accent btn-sm" onclick="openInstrModal()"><i class="ti ti-plus"></i> Add first instrument</button>
+    </div>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// ADD: GLOBAL SAVE BUTTON to nav
+// ════════════════════════════════════════════════════════════════
+function addGlobalSaveButton(){
+  const navRight=document.querySelector('.nav-right');
+  if(!navRight||document.getElementById('global-save-btn'))return;
+  const btn=document.createElement('button');
+  btn.id='global-save-btn';
+  btn.className='btn btn-accent btn-sm';
+  btn.innerHTML='<i class="ti ti-check"></i> Saved';
+  btn.title='All saved';
+  btn.onclick=globalSave;
+  btn.style.transition='all 0.3s';
+  // insert before the existing Save button
+  const existingSave=navRight.querySelector('.btn');
+  navRight.insertBefore(btn,existingSave);
+}
+
+// ════════════════════════════════════════════════════════════════
+// FIX: SUGGESTIONS — use included months only (issue 4 follow-up)
+// ════════════════════════════════════════════════════════════════
+function getIncludedHistoryMonths(){
+  return Object.entries(monthHistory)
+    .filter(([k,v])=>v.included!==false)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([k])=>k);
+}
+
+const _origRenderSuggestions=renderSuggestions;
+function renderSuggestions(){
+  // Only suggest if we have real history data
+  const months=getIncludedHistoryMonths();
+  const el=document.getElementById('suggestions-list');
+
+  if(!months.length){
+    el.innerHTML='<div class="empty-state" style="text-align:left;padding:12px 0;"><div style="font-size:13px;font-weight:500;color:var(--text2);margin-bottom:6px;">Import monthly history files to unlock insights.</div><div style="font-size:12px;color:var(--text3);">Go to <strong>Insights → Import history</strong> to upload your CSV or Excel month files. Once you have at least 2 months, patterns, suggestions and trends will appear here.</div></div>';
+    return;
+  }
+  _origRenderSuggestions();
+}
+
+// patch renderPersonCharts to use included months only
+const _origRenderPersonCharts=renderPersonCharts;
+function renderPersonCharts(){
+  const months=getIncludedHistoryMonths().slice(-6);
+  if(months.length<1)return;
+  _origRenderPersonCharts();
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
 (function init(){
   applyTheme();
   initTracker();
+  // restore from localStorage first (fast, no network)
+  const localState=localStorage.getItem('bp_state');
+  if(localState){
+    try{
+      const data=JSON.parse(localState);
+      // only apply if newer than baked-in state
+      const localTs=+localStorage.getItem('bp_state_ts')||0;
+      if(localTs>0)applyStatePayload(data);
+    } catch(e){/* corrupted, ignore */}
+  }
   recalc();
   updateEventsBadge();
   buildNotifications();
   renderTemplates();
-  // restore connections defaults if saved file has custom connections
+  ensureSavingStreams();
+  addGlobalSaveButton();
+  markDirty(false);
+  // restore connections defaults
   if(connections.length&&connections[0].id==='default'){
     connections[0].clientId=DEFAULT_CLIENT_ID;
     connections[0].sheetId=SPREADSHEET_ID;
     connections[0].sheetName=DEFAULT_SHEET_NAME;
   }
   // currency badge
-  document.getElementById('currency-badge').textContent=currencySymbol;
-  // currency settings modal listener
-  document.getElementById('currency-badge').addEventListener('click',()=>{
-    document.getElementById('currency-symbol').value=currencySymbol;
-    document.getElementById('currency-locale').value=currencyLocale;
-    document.getElementById('currency-overlay').classList.add('open');
-  });
+  const badge=document.getElementById('currency-badge');
+  if(badge){
+    badge.textContent=currencySymbol;
+    badge.addEventListener('click',()=>{
+      document.getElementById('currency-symbol').value=currencySymbol;
+      document.getElementById('currency-locale').value=currencyLocale;
+      document.getElementById('currency-overlay').classList.add('open');
+    });
+  }
+  // build purpose dropdown on open of item modal
+  const purposeSel=document.getElementById('item-purpose');
+  if(purposeSel){
+    const observer=new MutationObserver(()=>{
+      if(document.getElementById('item-overlay').classList.contains('open')){
+        buildPurposeDropdown(purposeSel.value);
+      }
+    });
+    observer.observe(document.getElementById('item-overlay'),{attributes:true,attributeFilter:['class']});
+  }
 })();
 </script>
 </body>
