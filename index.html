@@ -415,14 +415,14 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 
 <!-- SYNC BAR -->
 <div class="sync-bar">
-  <div class="sync-dot" id="sync-dot"></div>
-  <span id="sync-label">Not connected</span>
-  <button class="btn btn-sm" id="btn-connect" onclick="openConnModal()"><i class="ti ti-plug"></i> Connect</button>
-  <button class="btn btn-sm" id="btn-overwrite" style="display:none" onclick="openOverwriteModal()"><i class="ti ti-database-export"></i> Overwrite Sheet</button>
-  <button class="btn btn-sm" id="btn-pull" style="display:none" onclick="sheetsPull()"><i class="ti ti-refresh"></i> Pull</button>
-  <button class="btn btn-sm" id="btn-push" style="display:none" onclick="sheetsPush()"><i class="ti ti-upload"></i> Push</button>
-  <button class="btn btn-sm" id="btn-cal" style="display:none" onclick="openCalModal()"><i class="ti ti-calendar-plus"></i> Sync Calendar</button>
-  <span id="sync-last" style="margin-left:auto;font-size:10px;color:var(--text3);"></span>
+  <div class="sync-dot syncing" id="sync-dot"></div>
+  <span id="sync-label">Pushing...</span>
+  <button class="btn btn-sm" id="btn-connect" onclick="openConnModal()"><i class="ti ti-plug"></i> Connections</button>
+  <button class="btn btn-sm" id="btn-overwrite" style="" onclick="openOverwriteModal()"><i class="ti ti-database-export"></i> Overwrite Sheet</button>
+  <button class="btn btn-sm" id="btn-pull" style="" onclick="sheetsPull()"><i class="ti ti-refresh"></i> Pull</button>
+  <button class="btn btn-sm" id="btn-push" style="" onclick="sheetsPush()"><i class="ti ti-upload"></i> Push</button>
+  <button class="btn btn-sm" id="btn-cal" style="" onclick="openCalModal()"><i class="ti ti-calendar-plus"></i> Sync Calendar</button>
+  <span id="sync-last" style="margin-left:auto;font-size:10px;color:var(--text3);">Synced 11:36:05</span>
 </div>
 
 <!-- NAV -->
@@ -430,9 +430,9 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   <div class="brand"><i class="ti ti-wallet" style="color:var(--accent);font-size:16px;"></i> Budget<span>Planner</span></div>
   <button class="hamburger" onclick="toggleHamburger()"><i class="ti ti-menu-2"></i></button>
   <div class="nav-tabs" id="nav-tabs">
-    <div class="tab active" onclick="showTab('dashboard');closeHamburger()">Dashboard</div>
+    <div class="tab" onclick="showTab('dashboard');closeHamburger()">Dashboard</div>
     <div class="tab" onclick="showTab('cashflow');closeHamburger()"><i class="ti ti-calendar-event" style="font-size:11px;"></i> Cash Flow</div>
-    <div class="tab" onclick="showTab('tracker');closeHamburger()">Tracker</div>
+    <div class="tab active" onclick="showTab('tracker');closeHamburger()">Tracker</div>
     <div class="tab" onclick="showTab('events');closeHamburger()" id="tab-events-btn">Events <span class="badge" id="events-badge" style="display:none">0</span></div>
     <div class="tab" onclick="showTab('savings');closeHamburger()">Savings</div>
     <div class="tab" onclick="showTab('instruments');closeHamburger()">Instruments</div>
@@ -446,9 +446,18 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     </div>
     <div class="notif-wrap">
       <button class="notif-bell" id="notif-bell" onclick="toggleNotifDropdown()"><i class="ti ti-bell" style="font-size:14px;"></i><span class="notif-count">3</span></button>
-      <div class="notif-dropdown" id="notif-dropdown" style="display:none;">
+      <div class="notif-dropdown" id="notif-dropdown" style="display: none;">
         <div class="notif-header"><span>Notifications</span><button class="btn btn-sm btn-ghost" onclick="clearNotifs()">Clear all</button></div>
-        <div id="notif-list"></div>
+        <div id="notif-list"><div class="notif-item" style="">
+        <div class="notif-item-title">Due: Netflix</div>
+        <div class="notif-item-sub">0 LKR — 2d away</div>
+      </div><div class="notif-item" style="">
+        <div class="notif-item-title">Due: YouTube</div>
+        <div class="notif-item-sub">0 LKR — 2d away</div>
+      </div><div class="notif-item" style="">
+        <div class="notif-item-title">Due: Google One</div>
+        <div class="notif-item-sub">0 LKR — 2d away</div>
+      </div></div>
       </div>
     </div>
     <button class="btn btn-accent btn-sm" onclick="openItemModal()"><i class="ti ti-plus"></i> Add</button>
@@ -470,20 +479,20 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 <div class="main">
 
 <!-- ═══ DASHBOARD ══════════════════════════════════════════════ -->
-<div id="tab-dashboard" class="page active">
+<div id="tab-dashboard" class="page">
   <div id="events-banner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:var(--radius);padding:9px 14px;margin-bottom:14px;display:none;align-items:center;justify-content:space-between;cursor:pointer;font-size:12px;" onclick="showTab('events')">
     <span><i class="ti ti-alert-circle" style="color:var(--warning);margin-right:5px;"></i><span id="events-banner-text"></span></span>
     <span style="font-size:11px;color:var(--text2);">View all <i class="ti ti-chevron-right" style="font-size:10px;"></i></span>
   </div>
   <div class="metrics" id="dash-metrics">
-    <div class="metric-card"><div class="metric-label">Income</div><div class="metric-val">429,000</div><div class="metric-sub">LKR / month</div></div>
-    <div class="metric-card"><div class="metric-label">Expenses</div><div class="metric-val">427,500</div><div class="metric-sub">LKR / month</div></div>
-    <div class="metric-card"><div class="metric-label">Balance</div><div class="metric-val green">1,500</div><div class="metric-sub">surplus</div></div>
-    <div class="metric-card"><div class="metric-label">Tagged savings</div><div class="metric-val green">215,000</div><div class="metric-sub">50.1% of income</div></div>
-    <div class="metric-card"><div class="metric-label">Daily free spend</div><div class="metric-val green">50</div><div class="metric-sub">LKR/day</div></div></div>
+    <div class="metric-card"><div class="metric-label">Income</div><div class="metric-val">439,000</div><div class="metric-sub">LKR / month</div></div>
+    <div class="metric-card"><div class="metric-label">Expenses</div><div class="metric-val">435,000</div><div class="metric-sub">LKR / month</div></div>
+    <div class="metric-card"><div class="metric-label">Balance</div><div class="metric-val green">4,000</div><div class="metric-sub">surplus</div></div>
+    <div class="metric-card"><div class="metric-label">Tagged savings</div><div class="metric-val green">215,000</div><div class="metric-sub">49.0% of income</div></div>
+    <div class="metric-card"><div class="metric-label">Daily free spend</div><div class="metric-val green">133</div><div class="metric-sub">LKR/day</div></div></div>
   <div class="bbar-card">
-    <div class="bar-row"><span>Expenses vs income</span><span id="bar-pct-label">100%</span></div>
-    <div class="bar-track"><div class="bar-fill" id="bar-fill" style="width: 99.6503%; background: var(--danger);"></div></div>
+    <div class="bar-row"><span>Expenses vs income</span><span id="bar-pct-label">99%</span></div>
+    <div class="bar-track"><div class="bar-fill" id="bar-fill" style="width: 99.0888%; background: var(--danger);"></div></div>
   </div>
   <!-- Tagged savings panel — separated from income card below -->
   <div id="dash-savings-panel" class="card section-gap" style="display: block; margin-bottom: 16px;">
@@ -521,7 +530,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   <!-- Income + Expense cards -->
   <div class="two-col">
     <div class="card" id="income-card">
-      <div class="card-head"><span class="card-title">Income</span><span id="income-total-label" style="font-size:12px;font-weight:700;color:var(--accent);">429,000 LKR</span></div>
+      <div class="card-head"><span class="card-title">Income</span><span id="income-total-label" style="font-size:12px;font-weight:700;color:var(--accent);">439,000 LKR</span></div>
       <div id="income-rows"><div class="item-row" data-id="trevin_pay">
     <div class="item-head">
       <input type="checkbox" class="item-check" checked="" onchange="toggleItem('trevin_pay',this.checked)">
@@ -530,13 +539,13 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <span class="purpose-badge add" onclick="cyclePurpose('trevin_pay')" title="Add purpose tag">+ tag</span>
       <span class="due-badge " onclick="editDueDay('trevin_pay')" title="Click to change">17d</span>
       
-      <span class="item-amount " id="amt-trevin_pay" onclick="startAmtEdit('trevin_pay',this)" title="Click to edit">340,000 </span>
+      <span class="item-amount " id="amt-trevin_pay" onclick="startAmtEdit('trevin_pay',this)" title="Click to edit">350,000 </span>
       <div class="item-edit-btns">
         <button class="item-edit-btn" onclick="openItemModal('trevin_pay')" title="Edit all fields"><i class="ti ti-pencil" style="font-size:10px;"></i></button>
       </div>
     </div>
     <div class="slider-row">
-      <input type="range" min="0" max="700000" step="1000" value="340000" oninput="updateSlider('trevin_pay',+this.value)">
+      <input type="range" min="0" max="700000" step="1000" value="350000" oninput="updateSlider('trevin_pay',+this.value)">
       <span class="slider-max">700k</span>
     </div></div><div class="item-row" data-id="dulini_pay">
     <div class="item-head">
@@ -557,7 +566,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     </div></div></div>
     </div>
     <div class="card" id="expense-card">
-      <div class="card-head"><span class="card-title">Expenses</span><span id="expense-total-label" style="font-size:12px;font-weight:700;color:var(--danger);">427,500 LKR</span></div>
+      <div class="card-head"><span class="card-title">Expenses</span><span id="expense-total-label" style="font-size:12px;font-weight:700;color:var(--danger);">435,000 LKR</span></div>
       <div id="expense-rows"><div class="cat-group"><div class="cat-header"><span>Obligations</span><span>300,000</span></div><div class="item-row" data-id="house">
     <div class="item-head">
       <input type="checkbox" class="item-check" checked="" onchange="toggleItem('house',this.checked)">
@@ -718,7 +727,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div class="slider-row">
       <input type="range" min="0" max="50000" step="500" value="0" oninput="updateSlider('insurance',+this.value)">
       <span class="slider-max">50k</span>
-    </div></div></div><div class="cat-group"><div class="cat-header"><span>Lifestyle</span><span>55,000</span></div><div class="item-row" data-id="party">
+    </div></div></div><div class="cat-group"><div class="cat-header"><span>Lifestyle</span><span>60,000</span></div><div class="item-row" data-id="party">
     <div class="item-head">
       <input type="checkbox" class="item-check" checked="" onchange="toggleItem('party',this.checked)">
       <div class="owner-dot shared" onclick="cycleOwner('party')" title="Click to change owner"></div>
@@ -726,14 +735,14 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <span class="purpose-badge add" onclick="cyclePurpose('party')" title="Add purpose tag">+ tag</span>
       <span class="due-badge" onclick="editDueDay('party')" title="Set due day">+day</span>
       
-      <span class="item-amount " id="amt-party" onclick="startAmtEdit('party',this)" title="Click to edit">25,000 </span>
+      <span class="item-amount " id="amt-party" onclick="startAmtEdit('party',this)" title="Click to edit">30,000 </span>
       <div class="item-edit-btns">
         <button class="item-edit-btn" onclick="openItemModal('party')" title="Edit all fields"><i class="ti ti-pencil" style="font-size:10px;"></i></button>
       </div>
     </div>
     <div class="slider-row">
-      <input type="range" min="0" max="75000" step="500" value="25000" oninput="updateSlider('party',+this.value)">
-      <span class="slider-max">75k</span>
+      <input type="range" min="0" max="90000" step="500" value="30000" oninput="updateSlider('party',+this.value)">
+      <span class="slider-max">90k</span>
     </div></div><div class="item-row" data-id="outing">
     <div class="item-head">
       <input type="checkbox" class="item-check" checked="" onchange="toggleItem('outing',this.checked)">
@@ -782,7 +791,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div class="slider-row">
       <input type="range" min="0" max="50000" step="500" value="10000" oninput="updateSlider('tspend',+this.value)">
       <span class="slider-max">50k</span>
-    </div></div></div><div class="cat-group"><div class="cat-header"><span>Wellbeing</span><span>21,000</span></div><div class="item-row" data-id="dsaloon">
+    </div></div></div><div class="cat-group"><div class="cat-header"><span>Wellbeing</span><span>23,000</span></div><div class="item-row" data-id="dsaloon">
     <div class="item-head">
       <input type="checkbox" class="item-check" checked="" onchange="toggleItem('dsaloon',this.checked)">
       <div class="owner-dot dulini" onclick="cycleOwner('dsaloon')" title="Click to change owner"></div>
@@ -790,13 +799,13 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <span class="purpose-badge add" onclick="cyclePurpose('dsaloon')" title="Add purpose tag">+ tag</span>
       <span class="due-badge" onclick="editDueDay('dsaloon')" title="Set due day">+day</span>
       
-      <span class="item-amount " id="amt-dsaloon" onclick="startAmtEdit('dsaloon',this)" title="Click to edit">5,000 </span>
+      <span class="item-amount " id="amt-dsaloon" onclick="startAmtEdit('dsaloon',this)" title="Click to edit">7,000 </span>
       <div class="item-edit-btns">
         <button class="item-edit-btn" onclick="openItemModal('dsaloon')" title="Edit all fields"><i class="ti ti-pencil" style="font-size:10px;"></i></button>
       </div>
     </div>
     <div class="slider-row">
-      <input type="range" min="0" max="50000" step="500" value="5000" oninput="updateSlider('dsaloon',+this.value)">
+      <input type="range" min="0" max="50000" step="500" value="7000" oninput="updateSlider('dsaloon',+this.value)">
       <span class="slider-max">50k</span>
     </div></div><div class="item-row" data-id="tsaloon">
     <div class="item-head">
@@ -830,7 +839,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div class="slider-row">
       <input type="range" min="0" max="50000" step="500" value="15000" oninput="updateSlider('emergency',+this.value)">
       <span class="slider-max">50k</span>
-    </div></div></div><div class="cat-group"><div class="cat-header"><span>Subscriptions</span><span>6,500</span></div><div class="item-row" data-id="phone">
+    </div></div></div><div class="cat-group"><div class="cat-header"><span>Subscriptions</span><span>7,000</span></div><div class="item-row" data-id="phone">
     <div class="item-head">
       <input type="checkbox" class="item-check" checked="" onchange="toggleItem('phone',this.checked)">
       <div class="owner-dot trevin" onclick="cycleOwner('phone')" title="Click to change owner"></div>
@@ -886,13 +895,13 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <span class="purpose-badge add" onclick="cyclePurpose('googleone')" title="Add purpose tag">+ tag</span>
       <span class="due-badge soon" onclick="editDueDay('googleone')" title="Click to change">2d</span>
       
-      <span class="item-amount " id="amt-googleone" onclick="startAmtEdit('googleone',this)" title="Click to edit">1,000 </span>
+      <span class="item-amount " id="amt-googleone" onclick="startAmtEdit('googleone',this)" title="Click to edit">1,500 </span>
       <div class="item-edit-btns">
         <button class="item-edit-btn" onclick="openItemModal('googleone')" title="Edit all fields"><i class="ti ti-pencil" style="font-size:10px;"></i></button>
       </div>
     </div>
     <div class="slider-row">
-      <input type="range" min="0" max="50000" step="500" value="1000" oninput="updateSlider('googleone',+this.value)">
+      <input type="range" min="0" max="50000" step="500" value="1500" oninput="updateSlider('googleone',+this.value)">
       <span class="slider-max">50k</span>
     </div></div></div></div>
     </div>
@@ -914,17 +923,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     </div>
     <div class="card">
       <div class="card-head"><span class="card-title">Due in next 7 days</span></div>
-      <div id="due-soon-list"><div class="due-soon-item soon">
-      <div class="owner-dot shared"></div>
-      <span style="flex:1;">Netflix</span>
-      <span style="font-weight:600;">2,000 LKR</span>
-      <span style="font-size:10px;color:var(--text2);">2d</span>
-    </div><div class="due-soon-item soon">
-      <div class="owner-dot shared"></div>
-      <span style="flex:1;">Google One</span>
-      <span style="font-weight:600;">1,000 LKR</span>
-      <span style="font-size:10px;color:var(--text2);">2d</span>
-    </div><div class="due-soon-item ">
+      <div id="due-soon-list"><div class="due-soon-item ">
       <div class="owner-dot shared"></div>
       <span style="flex:1;">Card</span>
       <span style="font-weight:600;">20,000 LKR</span>
@@ -944,9 +943,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <div class="cf-dot-label">House</div></div><div class="cf-event-marker" style="left: 0%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--danger);" title="T home: 40,000 on day 1">↓</div>
       <div class="cf-dot-label">T</div></div><div class="cf-event-marker" style="left: 0%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--danger);" title="D home: 30,000 on day 1">↓</div>
       <div class="cf-dot-label">D</div></div><div class="cf-event-marker" style="left: 13.7931%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--danger);" title="Loan: 25,000 on day 5">↓</div>
-      <div class="cf-dot-label">Loan</div></div><div class="cf-event-marker" style="left: 31.0345%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--danger);" title="Netflix: 2,000 on day 10">↓</div>
-      <div class="cf-dot-label">Netflix</div></div><div class="cf-event-marker" style="left: 31.0345%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--danger);" title="Google One: 1,000 on day 10">↓</div>
-      <div class="cf-dot-label">Google</div></div><div class="cf-event-marker" style="left: 48.2759%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--accent);" title="Card: 20,000 on day 15">↓</div>
+      <div class="cf-dot-label">Loan</div></div><div class="cf-event-marker" style="left: 48.2759%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--accent);" title="Card: 20,000 on day 15">↓</div>
       <div class="cf-dot-label">Card</div></div><div class="cf-event-marker" style="left: 48.2759%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:var(--danger);" title="Phone: 3,500 on day 15">↓</div>
       <div class="cf-dot-label">Phone</div></div><div class="cf-event-marker" style="left: 82.7586%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:#1D9E75;" title="Trevin net pay: 340,000 on day 25">↑</div>
       <div class="cf-dot-label">Trevin</div></div><div class="cf-event-marker" style="left: 82.7586%; transform: translateX(-50%); position: absolute; top: 0px;"><div class="cf-dot" style="background:#D4537E;" title="Dulini net pay: 89,000 on day 25">↑</div>
@@ -984,18 +981,6 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
         <td style="padding:6px 8px;"><span class="tag-badge tag-variable">expense</span></td>
         <td style="padding:6px 8px;">27d</td>
       </tr><tr style="border-bottom:1px solid var(--border2);">
-        <td style="padding:6px 8px;font-weight:600;">Day 10</td>
-        <td style="padding:6px 8px;">Netflix</td>
-        <td style="padding:6px 8px;" class="var-neg">-2,000</td>
-        <td style="padding:6px 8px;"><span class="tag-badge tag-variable">expense</span></td>
-        <td style="padding:6px 8px;">2d</td>
-      </tr><tr style="border-bottom:1px solid var(--border2);">
-        <td style="padding:6px 8px;font-weight:600;">Day 10</td>
-        <td style="padding:6px 8px;">Google One</td>
-        <td style="padding:6px 8px;" class="var-neg">-1,000</td>
-        <td style="padding:6px 8px;"><span class="tag-badge tag-variable">expense</span></td>
-        <td style="padding:6px 8px;">2d</td>
-      </tr><tr style="border-bottom:1px solid var(--border2);">
         <td style="padding:6px 8px;font-weight:600;">Day 15</td>
         <td style="padding:6px 8px;">Card</td>
         <td style="padding:6px 8px;" class="var-neg">-20,000</td>
@@ -1030,7 +1015,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 </div>
 
 <!-- ═══ TRACKER ════════════════════════════════════════════════ -->
-<div id="tab-tracker" class="page">
+<div id="tab-tracker" class="page active">
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
     <select id="tracker-month" class="form-select" style="width:auto;" onchange="renderTracker()">
       <option value="0">January</option><option value="1">February</option><option value="2">March</option>
@@ -1051,7 +1036,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div class="tracker-section">
       <div class="tracker-section-header">
         <span class="tracker-section-title"><i class="ti ti-trending-up" style="color:var(--accent);margin-right:4px;"></i>Income</span>
-        <span class="tracker-section-total" style="color:var(--accent);">Budget: 429,000 LKR</span>
+        <span class="tracker-section-total" style="color:var(--accent);">Budget: 439,000 LKR</span>
       </div>
       <div class="tracker-table-wrap">
         <table class="tracker-table">
@@ -1062,7 +1047,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       
     </td>
     <td><div class="owner-dot trevin" style="display:inline-block;" onclick="cycleOwner('trevin_pay')" title="Click to change owner"></div></td>
-    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('trevin_pay',this,340000)">340,000</span></td>
+    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('trevin_pay',this,350000)">350,000</span></td>
     <td class="actual-input-cell"><input class="actual" type="number" placeholder="—" value="" data-key="inc_trevin_pay" data-month="5" data-year="2026" oninput="updateActual(this)"></td>
     <td class="">—</td>
     <td style="white-space:nowrap;"></td>
@@ -1079,7 +1064,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   </tr>
             <tr class="tracker-summary-row">
               <td colspan="2">Total income</td>
-              <td>429,000</td>
+              <td>439,000</td>
               <td>—</td>
               <td class="">—</td>
               <td></td>
@@ -1091,7 +1076,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div class="tracker-section">
       <div class="tracker-section-header">
         <span class="tracker-section-title"><i class="ti ti-trending-down" style="color:var(--danger);margin-right:4px;"></i>Expenses</span>
-        <span class="tracker-section-total" style="color:var(--danger);">Budget: 427,500 LKR</span>
+        <span class="tracker-section-total" style="color:var(--danger);">Budget: 435,000 LKR</span>
       </div>
       <div class="tracker-table-wrap">
         <table class="tracker-table">
@@ -1192,7 +1177,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       
     </td>
     <td><div class="owner-dot shared" style="display:inline-block;" onclick="cycleOwner('party')" title="Click to change owner"></div></td>
-    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('party',this,25000)">25,000</span></td>
+    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('party',this,30000)">30,000</span></td>
     <td class="actual-input-cell"><input class="actual" type="number" placeholder="—" value="" data-key="exp_party" data-month="5" data-year="2026" oninput="updateActual(this)"></td>
     <td class="">—</td>
     <td style="white-space:nowrap;"></td>
@@ -1232,7 +1217,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       
     </td>
     <td><div class="owner-dot dulini" style="display:inline-block;" onclick="cycleOwner('dsaloon')" title="Click to change owner"></div></td>
-    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('dsaloon',this,5000)">5,000</span></td>
+    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('dsaloon',this,7000)">7,000</span></td>
     <td class="actual-input-cell"><input class="actual" type="number" placeholder="—" value="" data-key="exp_dsaloon" data-month="5" data-year="2026" oninput="updateActual(this)"></td>
     <td class="">—</td>
     <td style="white-space:nowrap;"></td>
@@ -1292,7 +1277,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       
     </td>
     <td><div class="owner-dot shared" style="display:inline-block;" onclick="cycleOwner('googleone')" title="Click to change owner"></div></td>
-    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('googleone',this,1000)">1,000</span></td>
+    <td><span class="tracker-editable" onclick="startTrackerBudgetEdit('googleone',this,1500)">1,500</span></td>
     <td class="actual-input-cell"><input class="actual" type="number" placeholder="—" value="" data-key="exp_googleone" data-month="5" data-year="2026" oninput="updateActual(this)"></td>
     <td class="">—</td>
     <td style="white-space:nowrap;"></td>
@@ -1309,7 +1294,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   </tr>
             <tr class="tracker-summary-row">
               <td colspan="2">Total expenses</td>
-              <td>427,500</td>
+              <td>435,000</td>
               <td>—</td>
               <td class="">—</td>
               <td></td>
@@ -1328,7 +1313,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
           <tbody>
             <tr class="tracker-net-row">
               <td style="width:40%;">Budget net</td>
-              <td colspan="5" class="var-pos" style="font-size:15px;">+1,500 LKR</td>
+              <td colspan="5" class="var-pos" style="font-size:15px;">+4,000 LKR</td>
             </tr>
             
           </tbody>
@@ -1366,7 +1351,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   <div id="settlement-panel" class="settlement-card" style="display: block;">
     <div class="card-title">Monthly settlement</div>
     <div class="settlement-amount" id="settlement-amount"><span style="color:var(--dulini);">Trevin</span> contribution: 20,000 LKR more than Dulini</div>
-    <div id="settlement-detail" style="font-size:12px;color:var(--text2);">Based on split ratios. Trevin: 146,500 · Dulini: 106,500 LKR/mo on shared expenses.</div>
+    <div id="settlement-detail" style="font-size:12px;color:var(--text2);">Based on split ratios. Trevin: 149,250 · Dulini: 109,250 LKR/mo on shared expenses.</div>
     <button class="btn btn-sm btn-accent" style="margin-top:10px;" onclick="markSettled()"><i class="ti ti-check"></i> Mark settled</button>
   </div>
   <!-- Goal projections -->
@@ -1401,8 +1386,12 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <div class="networth-item"><div class="networth-item-label">Shared</div><div class="networth-item-val" id="nw-s">0 LKR</div></div>
     </div>
   </div>
-  <div class="insight-section-title">Monthly history — <span id="history-count">0 months</span> <button class="btn btn-sm" style="margin-left:8px;" onclick="openImportModal()"><i class="ti ti-upload"></i> Import history</button></div>
-  <div class="history-grid" id="history-grid"><div style="font-size:12px;color:var(--text3);padding:8px 0;">No history yet. Save a month in the Tracker to begin.</div></div>
+  <div class="insight-section-title">Monthly history — <span id="history-count">1 month</span> <button class="btn btn-sm" style="margin-left:8px;" onclick="openImportModal()"><i class="ti ti-upload"></i> Import history</button></div>
+  <div class="history-grid" id="history-grid"><div class="history-card" onclick="loadHistoryDetail('2026-5',this)">
+      <div style="font-size:12px;font-weight:600;">Jun</div>
+      <div style="font-size:10px;color:var(--text3);">2026</div>
+      <div style="font-size:11px;font-weight:600;margin-top:3px;color:var(--accent);">+4,000</div>
+    </div></div>
   <div class="history-detail" id="history-detail"></div>
   <div class="two-col">
     <div class="chart-card"><div class="chart-head"><span class="chart-title" style="color:var(--trevin);">Trevin — expense trend</span></div><div style="height:130px;"><canvas id="trevinChart"></canvas></div></div>
@@ -1412,10 +1401,10 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   <div class="insight-section-title">Smart suggestions</div>
   <div id="suggestions-list"><div class="suggestion-card">
       <div class="suggestion-icon" style="background:var(--accent-light);">🎯</div>
-      <div><div class="suggestion-text">Monthly balance of 1,500 LKR is unallocated.</div><div class="suggestion-sub">Route this to a savings stream or instrument via the Tracker Events panel.</div></div>
+      <div><div class="suggestion-text">Monthly balance of 4,000 LKR is unallocated.</div><div class="suggestion-sub">Route this to a savings stream or instrument via the Tracker Events panel.</div></div>
     </div><div class="suggestion-card">
       <div class="suggestion-icon" style="background:var(--purple-light);">✂️</div>
-      <div><div class="suggestion-text">Top discretionary spend: Party at 25,000 LKR /mo.</div><div class="suggestion-sub">Discretionary items are the easiest to reduce when targeting savings goals.</div></div>
+      <div><div class="suggestion-text">Top discretionary spend: Party at 30,000 LKR /mo.</div><div class="suggestion-sub">Discretionary items are the easiest to reduce when targeting savings goals.</div></div>
     </div></div>
   <div class="insight-section-title">Savings velocity</div>
   <div id="savings-velocity"><div style="font-size:12px;color:var(--text3);">No savings streams yet.</div></div>
@@ -1774,7 +1763,17 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 <div class="modal-overlay" id="conn-overlay" onclick="if(event.target===this)closeConnModal()">
 <div class="modal">
   <div class="modal-head"><span class="modal-title">Google connections</span><button class="modal-close" onclick="closeConnModal()"><i class="ti ti-x"></i></button></div>
-  <div id="conn-list"></div>
+  <div id="conn-list">
+    <div class="connection-row">
+      <div class="connection-dot "></div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:500;">Trevin &amp; Dulini</div>
+        <div style="font-size:10px;color:var(--text3);">Dynamic Budget Planner · 1q11IV9GWDJsP5f28e...</div>
+      </div>
+      <span style="font-size:10px;background:var(--accent-light);color:var(--accent-dark);padding:1px 7px;border-radius:99px;">Default</span>
+      <button class="btn btn-sm btn-accent" onclick="connectWith('default')">Connect</button>
+      
+    </div></div>
   <button class="btn btn-sm" onclick="toggleNewConnForm()"><i class="ti ti-plus"></i> Add connection</button>
   <div id="new-conn-form" style="display:none;margin-top:12px;">
     <div class="divider"></div>
@@ -1808,7 +1807,14 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   </div>
   <div class="divider"></div>
   <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em;">What will be written:</div>
-  <div id="overwrite-preview"></div>
+  <div id="overwrite-preview">
+    <div class="preview-row"><span>Dashboard tab</span><span>2 income + 21 expense items</span></div>
+    <div class="preview-row"><span>Tracker tab</span><span>Current month budget vs actual</span></div>
+    <div class="preview-row"><span>Savings tab</span><span>0 streams</span></div>
+    <div class="preview-row"><span>Instruments tab</span><span>0 instruments</span></div>
+    <div class="preview-row"><span>Events tab</span><span>0 transaction events</span></div>
+    <div class="preview-row"><span>Data tab</span><span>Structured sync source</span></div>
+    <div class="preview-row"><span>_Config tab</span><span>Sync map (do not delete)</span></div></div>
   <div class="modal-footer">
     <button class="btn" onclick="document.getElementById('overwrite-overlay').classList.remove('open')">Cancel</button>
     <button class="btn btn-warning" onclick="executeOverwrite()"><i class="ti ti-database-export"></i> Overwrite now</button>
@@ -1941,16 +1947,16 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 
   <!-- Tab switcher -->
   <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;">
-    <button class="btn" id="import-tab-local" onclick="switchImportTab('local')" style="flex:1;border-radius:0;border:none;background:var(--accent);color:#fff;font-weight:600;">
+    <button class="btn" id="import-tab-local" onclick="switchImportTab('local')" style="flex: 1 1 0%; border-radius: 0px; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial;">
       <i class="ti ti-upload"></i> Upload files
     </button>
-    <button class="btn" id="import-tab-drive" onclick="switchImportTab('drive')" style="flex:1;border-radius:0;border:none;">
+    <button class="btn" id="import-tab-drive" onclick="switchImportTab('drive')" style="flex: 1 1 0%; border-radius: 0px; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; background: var(--accent); color: rgb(255, 255, 255); font-weight: 600;">
       <i class="ti ti-brand-google-drive"></i> Browse Drive
     </button>
   </div>
 
   <!-- LOCAL UPLOAD PANEL -->
-  <div id="import-panel-local">
+  <div id="import-panel-local" style="display: none;">
     <div class="import-zone" id="import-zone" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFiles(event)" onclick="document.getElementById('import-file').click()">
       <i class="ti ti-files" style="font-size:32px;margin-bottom:8px;display:block;"></i>
       <strong>Drop files here or click to browse</strong>
@@ -1961,23 +1967,34 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
   </div>
 
   <!-- DRIVE BROWSER PANEL -->
-  <div id="import-panel-drive" style="display:none;">
+  <div id="import-panel-drive" style="display: block;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <span style="font-size:12px;color:var(--text2);">Files in <strong>Budget Planner — Monthly Archives</strong></span>
       <button class="btn btn-sm" onclick="loadDriveFiles()"><i class="ti ti-refresh"></i> Refresh</button>
     </div>
     <div id="drive-files-list" style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-height:120px;">
-      <div class="empty-state" id="drive-files-empty">
-        <i class="ti ti-cloud-off" style="font-size:24px;display:block;margin-bottom:8px;"></i>
-        Connect to Google first, then click Refresh to browse your Drive archive.
-      </div>
+    <div style="background:var(--surface2);padding:7px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);">
+      <input type="checkbox" id="drive-select-all" style="accent-color:var(--accent);" onchange="driveSelectAll(this.checked)">
+      <label for="drive-select-all" style="cursor:pointer;">1 file — select all</label>
     </div>
-    <div id="drive-selected-summary" style="font-size:11px;color:var(--text2);margin-top:8px;display:none;"></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border2);font-size:12px;" id="drow-1tOgOMP7H54kojx0_-Q7BkB4R_hiom8AH">
+        <input type="checkbox" style="accent-color:var(--accent);" onchange="toggleDriveFile('1tOgOMP7H54kojx0_-Q7BkB4R_hiom8AH',this.checked)">
+        <i class="ti ti-file-spreadsheet" style="color:var(--info);flex-shrink:0;"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Jun 2026 — Budget Tracker.xlsx</div>
+          <div style="font-size:10px;color:var(--text3);">Jun 2026 · 6/8/2026 · 30kb</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-sm btn-ghost" onclick="downloadDriveFile('1tOgOMP7H54kojx0_-Q7BkB4R_hiom8AH','Jun 2026 — Budget Tracker.xlsx')" title="Download"><i class="ti ti-download" style="font-size:11px;"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="deleteDriveFile('1tOgOMP7H54kojx0_-Q7BkB4R_hiom8AH','Jun 2026 — Budget Tracker.xlsx')" title="Delete"><i class="ti ti-trash" style="font-size:11px;"></i></button>
+        </div>
+      </div></div>
+    <div id="drive-selected-summary" style="font-size: 11px; color: var(--text2); margin-top: 8px; display: block;">1 file selected for import.</div>
   </div>
 
   <div class="modal-footer">
     <button class="btn" onclick="closeImportModal()">Cancel</button>
-    <button class="btn btn-accent" id="import-confirm-btn" style="display:none;" onclick="confirmImport()"><i class="ti ti-check"></i> Import selected</button>
+    <button class="btn btn-accent" id="import-confirm-btn" style="" onclick="confirmImport()"><i class="ti ti-check"></i> Import selected</button>
   </div>
 </div>
 </div>
@@ -1996,15 +2013,15 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
 <div class="context-menu" id="context-menu" style="display:none;"></div>
 
 <script>
-const _SI=[{"id":"trevin_pay","type":"income","name":"Trevin net pay","val":340000,"freq":"monthly","cat":"","tag":"fixed","purpose":"","owner":"trevin","on":true,"dueDay":25,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[{"field":"amount","from":360000,"to":340000,"ts":1780897904741}]},{"id":"dulini_pay","type":"income","name":"Dulini net pay","val":89000,"freq":"monthly","cat":"","tag":"fixed","purpose":"","owner":"dulini","on":true,"dueDay":25,"bufferDays":0,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[]},{"id":"house","type":"expense","name":"House","val":180000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"saving","owner":"shared","on":true,"dueDay":1,"bufferDays":3,"splitRatio":{"trevin":60,"dulini":40},"calEventId":null,"history":[]},{"id":"thome","type":"expense","name":"T home","val":40000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"","owner":"trevin","on":true,"dueDay":1,"bufferDays":3,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"dhome","type":"expense","name":"D home","val":30000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"","owner":"dulini","on":true,"dueDay":1,"bufferDays":3,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[]},{"id":"loan","type":"expense","name":"Loan","val":25000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"loan","owner":"trevin","on":true,"dueDay":5,"bufferDays":3,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"card","type":"expense","name":"Card","val":20000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"saving","owner":"shared","on":true,"dueDay":15,"bufferDays":3,"splitRatio":{"trevin":60,"dulini":40},"calEventId":null,"history":[]},{"id":"fuel","type":"expense","name":"Fuel","val":30000,"freq":"monthly","cat":"transport","tag":"variable","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"car","type":"expense","name":"Car","val":0,"freq":"monthly","cat":"transport","tag":"variable","purpose":"","owner":"shared","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"bike","type":"expense","name":"Bike","val":15000,"freq":"monthly","cat":"transport","tag":"variable","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"insurance","type":"expense","name":"Insurance","val":0,"freq":"monthly","cat":"transport","tag":"fixed","purpose":"","owner":"shared","on":true,"dueDay":1,"bufferDays":5,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"party","type":"expense","name":"Party","val":25000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"outing","type":"expense","name":"Outing","val":10000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"dspend","type":"expense","name":"D spending","val":10000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"dulini","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[]},{"id":"tspend","type":"expense","name":"T spending","val":10000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"dsaloon","type":"expense","name":"D saloon","val":5000,"freq":"monthly","cat":"wellbeing","tag":"variable","purpose":"","owner":"dulini","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[]},{"id":"tsaloon","type":"expense","name":"T saloon","val":1000,"freq":"monthly","cat":"wellbeing","tag":"variable","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"emergency","type":"expense","name":"Emergency fund","val":15000,"freq":"monthly","cat":"wellbeing","tag":"fixed","purpose":"saving","owner":"shared","on":true,"dueDay":26,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":11500,"to":15000,"ts":1780897844943}]},{"id":"phone","type":"expense","name":"Phone","val":3500,"freq":"monthly","cat":"subscriptions","tag":"fixed","purpose":"","owner":"trevin","on":true,"dueDay":15,"bufferDays":3,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"netflix","type":"expense","name":"Netflix","val":2000,"freq":"monthly","cat":"subscriptions","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":10,"bufferDays":2,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"youtube","type":"expense","name":"YouTube","val":0,"freq":"monthly","cat":"subscriptions","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":10,"bufferDays":2,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"googleone","type":"expense","name":"Google One","val":1000,"freq":"monthly","cat":"subscriptions","tag":"fixed","purpose":"","owner":"shared","on":true,"dueDay":10,"bufferDays":2,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"id_uu68bux8y","type":"expense","name":"D Gym","val":5000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"","owner":"dulini","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"instrumentLink":"","calEventId":null,"history":[]}];
+const _SI=[{"id":"trevin_pay","type":"income","name":"Trevin net pay","val":350000,"freq":"monthly","cat":"","tag":"fixed","purpose":"","owner":"trevin","on":true,"dueDay":25,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[{"field":"amount","from":340000,"to":350000,"ts":1780898713943},{"field":"amount","from":222000,"to":340000,"ts":1780898492512},{"field":"amount","from":360000,"to":340000,"ts":1780897904741}]},{"id":"dulini_pay","type":"income","name":"Dulini net pay","val":89000,"freq":"monthly","cat":"","tag":"fixed","purpose":"","owner":"dulini","on":true,"dueDay":25,"bufferDays":0,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[]},{"id":"house","type":"expense","name":"House","val":180000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"saving","owner":"shared","on":true,"dueDay":1,"bufferDays":3,"splitRatio":{"trevin":60,"dulini":40},"calEventId":null,"history":[{"field":"amount","from":100000,"to":180000,"ts":1780898503890}]},{"id":"thome","type":"expense","name":"T home","val":40000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"","owner":"trevin","on":true,"dueDay":1,"bufferDays":3,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[{"field":"amount","from":35000,"to":40000,"ts":1780898512620}]},{"id":"dhome","type":"expense","name":"D home","val":30000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"","owner":"dulini","on":true,"dueDay":1,"bufferDays":3,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[{"field":"amount","from":25000,"to":30000,"ts":1780898518587}]},{"id":"loan","type":"expense","name":"Loan","val":25000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"loan","owner":"trevin","on":true,"dueDay":5,"bufferDays":3,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"card","type":"expense","name":"Card","val":20000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"saving","owner":"shared","on":true,"dueDay":15,"bufferDays":3,"splitRatio":{"trevin":60,"dulini":40},"calEventId":null,"history":[]},{"id":"fuel","type":"expense","name":"Fuel","val":30000,"freq":"monthly","cat":"transport","tag":"variable","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[{"field":"amount","from":20000,"to":30000,"ts":1780898528565}]},{"id":"car","type":"expense","name":"Car","val":0,"freq":"monthly","cat":"transport","tag":"variable","purpose":"","owner":"shared","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"bike","type":"expense","name":"Bike","val":15000,"freq":"monthly","cat":"transport","tag":"variable","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"insurance","type":"expense","name":"Insurance","val":0,"freq":"monthly","cat":"transport","tag":"fixed","purpose":"","owner":"shared","on":true,"dueDay":1,"bufferDays":5,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[]},{"id":"party","type":"expense","name":"Party","val":30000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":25000,"to":30000,"ts":1780898542739}]},{"id":"outing","type":"expense","name":"Outing","val":10000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":5000,"to":10000,"ts":1780898537109}]},{"id":"dspend","type":"expense","name":"D spending","val":10000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"dulini","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[]},{"id":"tspend","type":"expense","name":"T spending","val":10000,"freq":"monthly","cat":"lifestyle","tag":"discretionary","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"dsaloon","type":"expense","name":"D saloon","val":7000,"freq":"monthly","cat":"wellbeing","tag":"variable","purpose":"","owner":"dulini","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":0,"dulini":100},"calEventId":null,"history":[{"field":"amount","from":70000,"to":7000,"ts":1780898665632},{"field":"amount","from":5000,"to":70000,"ts":1780898661271},{"field":"amount","from":5000,"to":7000,"ts":1780898566501},{"field":"amount","from":5000,"to":70000,"ts":1780898550045}]},{"id":"tsaloon","type":"expense","name":"T saloon","val":1000,"freq":"monthly","cat":"wellbeing","tag":"variable","purpose":"","owner":"trevin","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"emergency","type":"expense","name":"Emergency fund","val":15000,"freq":"monthly","cat":"wellbeing","tag":"fixed","purpose":"saving","owner":"shared","on":true,"dueDay":26,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":11500,"to":15000,"ts":1780898555520},{"field":"amount","from":11500,"to":15000,"ts":1780897844943}]},{"id":"phone","type":"expense","name":"Phone","val":3500,"freq":"monthly","cat":"subscriptions","tag":"fixed","purpose":"","owner":"trevin","on":true,"dueDay":15,"bufferDays":3,"splitRatio":{"trevin":100,"dulini":0},"calEventId":null,"history":[]},{"id":"netflix","type":"expense","name":"Netflix","val":2000,"freq":"monthly","cat":"subscriptions","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":10,"bufferDays":2,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":0,"to":2000,"ts":1780898675941}]},{"id":"youtube","type":"expense","name":"YouTube","val":0,"freq":"monthly","cat":"subscriptions","tag":"discretionary","purpose":"","owner":"shared","on":true,"dueDay":10,"bufferDays":2,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":0,"to":1000,"ts":1780898685043}]},{"id":"googleone","type":"expense","name":"Google One","val":1500,"freq":"monthly","cat":"subscriptions","tag":"fixed","purpose":"","owner":"shared","on":true,"dueDay":10,"bufferDays":2,"splitRatio":{"trevin":50,"dulini":50},"calEventId":null,"history":[{"field":"amount","from":0,"to":1500,"ts":1780898695340}]},{"id":"id_uu68bux8y","type":"expense","name":"D Gym","val":5000,"freq":"monthly","cat":"obligations","tag":"fixed","purpose":"","owner":"dulini","on":true,"dueDay":0,"bufferDays":0,"splitRatio":{"trevin":50,"dulini":50},"instrumentLink":"","calEventId":null,"history":[]}];
 const _ST={"2026-5":{}};
 const _SS=[];
 const _SIn=[];
 const _SE=[];
-const _SH={};
+const _SH={"2026-5":{"totalIncome":439000,"totalExpenses":435000,"totalSaved":215000,"balance":4000,"perPerson":{"trevin":{"expenses":273750,"income":350000},"dulini":{"expenses":161250,"income":89000}}}};
 const _SN={};
 const _SB=0;
-const _SC=[{"id":"default","label":"Trevin & Dulini","clientId":"42738927572-p2fkpm7vetktvdcqj3hdeprkm2ccmjrd.apps.googleusercontent.com","sheetId":"1q11IV9GWDJsP5f28eO9oxzKk9bzN35zsAvmM6dUp8DM","sheetName":"Dynamic Budget Planner","active":false}];
+const _SC=[{"id":"default","label":"Trevin & Dulini","clientId":"42738927572-p2fkpm7vetktvdcqj3hdeprkm2ccmjrd.apps.googleusercontent.com","sheetId":"1q11IV9GWDJsP5f28eO9oxzKk9bzN35zsAvmM6dUp8DM","sheetName":"Dynamic Budget Planner","active":true}];
 const _ST2=[];
 const _SSL=[];
 const _CUR={"symbol":"LKR","locale":"en-LK"};
