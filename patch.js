@@ -1,255 +1,253 @@
 // ==========================================
-// patch.js — Dynamic Budget Planner Overrides (v5 - Complete Site Mirror)
+// patch-v6.js — Purpose badge open tags + full localStorage persistence
 // ==========================================
-console.log("Patch layer v5 (Complete Site Mirror) loaded.");
+console.log("Patch v6 (Open tags + persistence) loaded.");
 
-// ── 1. FIX PROFILE REFRESH BUG ─────────────────────────────────
-const originalLsSave = window.lsSave;
-window.lsSave = function() {
-  if (typeof originalLsSave === 'function') originalLsSave();
-  try { localStorage.setItem('bp_active_profile', activeProfile); } catch(e) {}
+// ── COLOUR MAP for predefined purpose tags ──────────────────────
+// Any value NOT in this map gets the default neutral style
+const PURPOSE_COLOR_MAP = {
+  saving:      { bg: 'var(--accent-light)',   color: 'var(--accent-dark)',  border: 'var(--accent)'   },
+  investment:  { bg: 'var(--gold-light)',      color: 'var(--gold)',         border: 'var(--gold)'     },
+  loan:        { bg: 'var(--danger-light)',    color: 'var(--danger)',       border: 'var(--danger)'   },
+  fd:          { bg: 'var(--info-light)',      color: 'var(--info)',         border: 'var(--info)'     },
+  fund:        { bg: 'var(--gold-light)',      color: 'var(--gold)',         border: 'var(--gold)'     },
+  earning:     { bg: 'var(--info-light)',      color: 'var(--info)',         border: 'var(--info)'     },
+  living:      { bg: 'var(--purple-light)',    color: 'var(--purple)',       border: 'var(--purple)'   },
+  vehicle:     { bg: 'var(--warning-light)',   color: 'var(--warning)',      border: 'var(--warning)'  },
+  entertainment:{ bg:'var(--pink-light)',      color: 'var(--pink)',         border: 'var(--pink)'     },
+};
+const PURPOSE_DEFAULT = {
+  bg: 'var(--surface3)', color: 'var(--text2)', border: 'var(--border)'
 };
 
-window.addEventListener('load', () => {
-  const savedProfile = localStorage.getItem('bp_active_profile');
-  if (savedProfile && typeof setProfile === 'function') setProfile(savedProfile);
-});
-
-// ── 2. FORMAT FILE UI INJECTION ──────────────────────────────
-window.addEventListener('load', () => {
-  const syncBar = document.querySelector('.sync-bar');
-  if (syncBar && !document.getElementById('btn-master-format')) {
-    const formatBtn = document.createElement('button');
-    formatBtn.id = 'btn-master-format';
-    formatBtn.className = 'btn btn-sm';
-    formatBtn.innerHTML = '<i class="ti ti-database"></i> Master Site Database';
-    formatBtn.onclick = openFormatManager;
-    syncBar.appendChild(formatBtn);
+// Returns an inline-styled badge span for ANY purpose string
+window.purposeBadgeHtml = function(purposeVal, itemId) {
+  if (!purposeVal || !purposeVal.trim()) {
+    // No purpose — show faint "+ tag" prompt
+    return `<span class="purpose-badge add" onclick="promptSetPurpose('${itemId}')" title="Add a purpose tag">+ tag</span>`;
   }
+  const key = purposeVal.trim().toLowerCase();
+  const style = PURPOSE_COLOR_MAP[key] || PURPOSE_DEFAULT;
+  const label = purposeVal.trim();
+  return `<span
+    style="font-size:9px;padding:1px 6px;border-radius:99px;cursor:pointer;flex-shrink:0;border:1px solid ${style.border};background:${style.bg};color:${style.color};"
+    onclick="promptSetPurpose('${itemId}')"
+    title="Click to change — type any word"
+  >${label}</span>`;
+};
 
-  if (!document.getElementById('format-manager-overlay')) {
-    const modalHTML = `
-    <div class="modal-overlay" id="format-manager-overlay" onclick="if(event.target===this) this.classList.remove('open')">
-      <div class="modal">
-        <div class="modal-head">
-          <span class="modal-title"><i class="ti ti-database" style="color:var(--danger);"></i> Master Database Control</span>
-          <button class="modal-close" onclick="document.getElementById('format-manager-overlay').classList.remove('open')"><i class="ti ti-x"></i></button>
-        </div>
-        
-        <div style="padding: 16px; font-size: 13px; color: var(--text2); line-height: 1.5;">
-          <p>Download your current site state as a multi-tab Excel Workbook. You can audit, adjust split ratios, due dates, goals, and actuals directly in Excel, then upload it back to completely overwrite the site.</p>
-          
-          <button class="btn btn-sm" style="margin-bottom: 16px; width: 100%; justify-content: center; background: var(--info-light); color: var(--info); border-color: var(--info);" onclick="downloadMasterTemplate()">
-            <i class="ti ti-download"></i> Download Site Master (.xlsx)
-          </button>
-          
-          <div class="import-zone" onclick="document.getElementById('master-upload-file').click()" style="cursor: pointer; border: 2px dashed var(--danger); border-radius: var(--radius); padding: 30px 20px; text-align: center; transition: all 0.2s;">
-            <i class="ti ti-upload" style="font-size:28px; margin-bottom:8px; display:block; color:var(--danger);"></i>
-            Upload Master File to Overwrite Site<br>
-            <span style="font-size:10px; opacity:0.7;">Must be the exported .xlsx format</span>
-          </div>
-          <input type="file" id="master-upload-file" accept=".xlsx" style="display:none;" onchange="handleMasterUpload(event)">
-          
-          <div id="master-upload-status" style="margin-top: 12px; font-weight: 600; text-align: center;"></div>
-        </div>
-      </div>
-    </div>`;
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-  }
-});
+// Prompt to set/change purpose — any free text accepted
+window.promptSetPurpose = function(itemId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  const current = item.purpose || '';
+  const v = prompt(
+    'Set purpose tag (any word — e.g. saving, earning, living, vehicle, entertainment, or anything else).\nLeave blank to remove.',
+    current
+  );
+  if (v === null) return; // cancelled
+  item.purpose = v.trim().toLowerCase();
+  if (typeof markDirty === 'function') markDirty();
+  if (typeof recalc === 'function') recalc();
+};
 
-// ── 3. FULL EXCEL MIRROR LOGIC ───────────────────────────────
-function openFormatManager() {
-  document.getElementById('format-manager-overlay').classList.add('open');
-  document.getElementById('master-upload-status').innerHTML = ""; 
-}
-
-// Builds the multi-tab Excel file containing ALL site mechanics
-function downloadMasterTemplate() {
-  if (typeof XLSX === 'undefined') {
-    alert("Excel library is still loading, please wait a second.");
+// ── PATCH buildItemRow to use the new badge ─────────────────────
+// Wait until the main script has defined buildItemRow, then wrap it
+window.addEventListener('load', () => {
+  if (typeof buildItemRow !== 'function') {
+    console.warn('patch-v6: buildItemRow not found — badge patch skipped');
     return;
   }
-  
-  const wb = XLSX.utils.book_new();
-
-  // 1. ITEMS (Income & Expenses + Mechanics)
-  const itemsExport = items.map(i => ({
-    ID: i.id, Type: i.type, Name: i.name, Amount: i.val, Frequency: i.freq,
-    Category: i.cat || '', BudgetTag: i.tag || '', Purpose: i.purpose || '', 
-    Owner: i.owner, Active: i.on, DueDay: i.dueDay || 0, BufferDays: i.bufferDays || 0,
-    SplitTrevin: i.splitRatio?.trevin || 0, SplitDulini: i.splitRatio?.dulini || 0,
-    LinkedInstrument: i.instrumentLink || ''
-  }));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsExport), "Items");
-
-  // 2. TRACKER ACTUALS (Flattened mapping)
-  const trackerRows = [];
-  Object.keys(trackerData).forEach(monthYear => {
-    Object.keys(trackerData[monthYear]).forEach(itemKey => {
-      if (itemKey !== 'routes') {
-        trackerRows.push({ MonthYear: monthYear, ItemKey: itemKey, ActualValue: trackerData[monthYear][itemKey] });
+  const _origBuildItemRow = window.buildItemRow;
+  window.buildItemRow = function(item) {
+    const el = _origBuildItemRow(item);
+    // Replace whatever purpose badge was rendered with the open-tag version
+    // Find the existing purpose badge span inside the element and replace it
+    if (el && el.querySelector) {
+      const existing = el.querySelector('.purpose-badge, [onclick*="cyclePurpose"], [onclick*="promptSetPurpose"]');
+      if (existing) {
+        const tmp = document.createElement('span');
+        tmp.innerHTML = window.purposeBadgeHtml(item.purpose, item.id);
+        existing.replaceWith(tmp.firstChild);
       }
-    });
-  });
-  // Ensure the tab exists even if empty
-  if (trackerRows.length === 0) trackerRows.push({ MonthYear: "", ItemKey: "", ActualValue: "" });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trackerRows), "TrackerActuals");
-
-  // 3. SAVINGS STREAMS
-  const savingsExport = savingsStreams.map(s => ({
-    ID: s.id, Name: s.name, Balance: s.balance, Goal: s.goal || 0, Owner: s.owner, Color: s.color || ''
-  }));
-  if (savingsExport.length === 0) savingsExport.push({ ID: "", Name: "", Balance: "", Goal: "", Owner: "", Color: "" });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(savingsExport), "Savings");
-
-  // 4. INSTRUMENTS
-  const instExport = instruments.map(i => ({
-    ID: i.id, Name: i.name, Type: i.type, Capital: i.capital || 0, Rate: i.rate || 0,
-    Period: i.period || 0, Monthly: i.monthly || 0, Start: i.start || '',
-    Units: i.units || 0, Price: i.price || 0, Owner: i.owner, Notes: i.notes || ''
-  }));
-  if (instExport.length === 0) instExport.push({ ID: "", Name: "", Type: "", Capital: "", Rate: "", Period: "", Monthly: "", Start: "", Units: "", Price: "", Owner: "", Notes: "" });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(instExport), "Instruments");
-
-  // 5. EVENTS
-  const eventsExport = txEvents.map(e => ({
-    ID: e.id, SourceKey: e.sourceKey || '', SourceItem: e.sourceItem || '', Amount: e.amount || 0,
-    Month: e.month, Year: e.year, Status: e.status || '', RouteType: e.routeType || '',
-    RouteTarget: e.routeTarget || ''
-  }));
-  if (eventsExport.length === 0) eventsExport.push({ ID: "", SourceKey: "", SourceItem: "", Amount: "", Month: "", Year: "", Status: "", RouteType: "", RouteTarget: "" });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(eventsExport), "Events");
-
-  // 6. CONFIG
-  const configExport = [{ key: 'accountBalance', value: accountBalance }];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(configExport), "Config");
-
-  XLSX.writeFile(wb, "Budget_Site_Master.xlsx");
-}
-
-// Parses the file and forces the site arrays to match exactly
-function handleMasterUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const statusEl = document.getElementById('master-upload-status');
-  statusEl.innerHTML = `<span style="color:var(--text2);"><i class="ti ti-loader"></i> Auditing and Rebuilding Site...</span>`;
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, {type: 'array'});
-      
-      // 1. Rebuild ITEMS
-      if (workbook.Sheets['Items']) {
-        const parsedItems = XLSX.utils.sheet_to_json(workbook.Sheets['Items']);
-        items = parsedItems.filter(r => r.Name).map(r => ({
-          id: r.ID || uid(),
-          type: r.Type,
-          name: r.Name,
-          val: parseFloat(r.Amount) || 0,
-          freq: r.Frequency || 'monthly',
-          cat: r.Category || '',
-          tag: r.BudgetTag || '',
-          purpose: r.Purpose || '',
-          owner: r.Owner || 'shared',
-          on: String(r.Active).toLowerCase() === 'true' || r.Active === true,
-          dueDay: parseInt(r.DueDay) || 0,
-          bufferDays: parseInt(r.BufferDays) || 0,
-          splitRatio: { trevin: parseFloat(r.SplitTrevin) || 0, dulini: parseFloat(r.SplitDulini) || 0 },
-          instrumentLink: r.LinkedInstrument || '',
-          history: [] // History reset on hard sync to save space
-        }));
-      }
-
-      // 2. Rebuild SAVINGS
-      if (workbook.Sheets['Savings']) {
-        const parsedSav = XLSX.utils.sheet_to_json(workbook.Sheets['Savings']);
-        savingsStreams = parsedSav.filter(r => r.Name).map(r => ({
-          id: r.ID || uid(),
-          name: r.Name,
-          balance: parseFloat(r.Balance) || 0,
-          goal: parseFloat(r.Goal) || 0,
-          owner: r.Owner || 'shared',
-          color: r.Color || 'var(--accent)',
-          history: []
-        }));
-      }
-
-      // 3. Rebuild INSTRUMENTS
-      if (workbook.Sheets['Instruments']) {
-        const parsedInst = XLSX.utils.sheet_to_json(workbook.Sheets['Instruments']);
-        instruments = parsedInst.filter(r => r.Name).map(r => ({
-          id: r.ID || uid(),
-          name: r.Name,
-          type: r.Type || 'loan',
-          capital: parseFloat(r.Capital) || 0,
-          rate: parseFloat(r.Rate) || 0,
-          period: parseInt(r.Period) || 0,
-          monthly: parseFloat(r.Monthly) || 0,
-          start: r.Start || '',
-          units: parseFloat(r.Units) || 0,
-          price: parseFloat(r.Price) || 0,
-          owner: r.Owner || 'shared',
-          notes: r.Notes || ''
-        }));
-      }
-
-      // 4. Rebuild TRACKER ACTUALS
-      if (workbook.Sheets['TrackerActuals']) {
-        trackerData = {}; // Hard reset
-        const parsedTracker = XLSX.utils.sheet_to_json(workbook.Sheets['TrackerActuals']);
-        parsedTracker.forEach(r => {
-          if (r.MonthYear && r.ItemKey) {
-            if (!trackerData[r.MonthYear]) trackerData[r.MonthYear] = {};
-            trackerData[r.MonthYear][r.ItemKey] = parseFloat(r.ActualValue) || 0;
-          }
-        });
-      }
-
-      // 5. Rebuild EVENTS
-      if (workbook.Sheets['Events']) {
-        const parsedEvents = XLSX.utils.sheet_to_json(workbook.Sheets['Events']);
-        txEvents = parsedEvents.filter(r => r.Month && r.Year).map(r => ({
-          id: r.ID || uid(),
-          sourceKey: r.SourceKey || '',
-          sourceItem: r.SourceItem || '',
-          amount: parseFloat(r.Amount) || 0,
-          month: parseInt(r.Month),
-          year: parseInt(r.Year),
-          dateLabel: MS[parseInt(r.Month)] + ' ' + r.Year,
-          status: r.Status || 'untagged',
-          routeType: r.RouteType || '',
-          routeTarget: r.RouteTarget || '',
-          chain: []
-        }));
-      }
-
-      // 6. Rebuild CONFIG
-      if (workbook.Sheets['Config']) {
-        const confRows = XLSX.utils.sheet_to_json(workbook.Sheets['Config']);
-        const balRow = confRows.find(c => c.key === 'accountBalance');
-        if (balRow) accountBalance = parseFloat(balRow.value) || 0;
-      }
-
-      // 🚨 COMMIT TO MEMORY & REDRAW
-      recalc();
-      if (typeof renderTracker === 'function') renderTracker();
-      lsSave();
-
-      statusEl.innerHTML = `<span style="color:var(--accent);"><i class="ti ti-check"></i> OVERWRITE COMPLETE. Database Synchronized.</span>`;
-      
-      setTimeout(() => {
-        document.getElementById('format-manager-overlay').classList.remove('open');
-        event.target.value = ''; 
-      }, 2000);
-
-    } catch (err) {
-      statusEl.innerHTML = `<span style="color:var(--danger);"><i class="ti ti-alert-triangle"></i> Rebuild Error: Ensure you uploaded the exact .xlsx format.</span>`;
-      console.error(err);
     }
+    return el;
   };
-  reader.readAsArrayBuffer(file);
-}
+  console.log('patch-v6: buildItemRow patched for open purpose tags');
+});
+
+// ── ALSO patch the global table purpose select to be a free-text input ──
+// Wrap renderGlobalTable to swap the purpose <select> for an <input>
+window.addEventListener('load', () => {
+  if (typeof renderGlobalTable !== 'function') return;
+  const _origRGT = window.renderGlobalTable;
+  window.renderGlobalTable = function() {
+    _origRGT();
+    // After render, find all purpose <select> in global table and replace with text inputs
+    const tbody = document.getElementById('global-tbody');
+    if (!tbody) return;
+    tbody.querySelectorAll('tr').forEach((row, idx) => {
+      const item = items[idx];
+      if (!item) return;
+      const selects = row.querySelectorAll('select');
+      selects.forEach(sel => {
+        // Identify purpose select by checking if its options include 'saving'
+        const optVals = Array.from(sel.options).map(o => o.value);
+        if (optVals.includes('saving') && optVals.includes('loan')) {
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.value = item.purpose || '';
+          inp.placeholder = 'any tag';
+          inp.style.cssText = 'width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);font-size:10px;font-family:inherit;';
+          inp.onchange = () => {
+            item.purpose = inp.value.trim().toLowerCase();
+            if (typeof markDirty === 'function') markDirty();
+            if (typeof recalc === 'function') recalc();
+          };
+          sel.replaceWith(inp);
+        }
+      });
+    });
+  };
+  console.log('patch-v6: renderGlobalTable patched — purpose is now free text');
+});
+
+// ── FULL LOCALSTORAGE PERSISTENCE ──────────────────────────────
+// Override lsSave to capture ALL state
+window.lsSave = function() {
+  try {
+    const state = {
+      items,
+      trackerData,
+      savingsStreams,
+      instruments,
+      txEvents,
+      monthHistory,
+      monthNotes:    typeof monthNotes    !== 'undefined' ? monthNotes    : {},
+      accountBalance:typeof accountBalance!== 'undefined' ? accountBalance: 0,
+      templates:     typeof templates     !== 'undefined' ? templates     : [],
+      settlementHistory: typeof settlementHistory !== 'undefined' ? settlementHistory : [],
+      currencySymbol:typeof currencySymbol!== 'undefined' ? currencySymbol: 'LKR',
+      currencyLocale:typeof currencyLocale!== 'undefined' ? currencyLocale: 'en-LK',
+      isDarkTheme:   typeof isDarkTheme   !== 'undefined' ? isDarkTheme   : false,
+      activeProfile: typeof activeProfile !== 'undefined' ? activeProfile : 'trevin',
+      connections:   typeof connections   !== 'undefined' ? connections.map(c=>({...c,active:false})) : [],
+      _v: 6,
+      _ts: Date.now()
+    };
+    localStorage.setItem('bp_state_v6', JSON.stringify(state));
+  } catch(e) {
+    console.warn('lsSave failed:', e);
+  }
+};
+
+// lsLoad — call this early to restore all state before recalc
+window.lsLoad = function() {
+  try {
+    const raw = localStorage.getItem('bp_state_v6');
+    if (!raw) return false;
+    const state = JSON.parse(raw);
+    if (!state || state._v !== 6) return false;
+
+    if (Array.isArray(state.items) && state.items.length)
+      items = state.items.map(i => ({ ...i, history: i.history || [], calEventId: i.calEventId || null }));
+
+    if (state.trackerData)      trackerData      = state.trackerData;
+    if (Array.isArray(state.savingsStreams))
+      savingsStreams = state.savingsStreams.map(s => ({ ...s, history: s.history || [] }));
+    if (Array.isArray(state.instruments))
+      instruments    = state.instruments;
+    if (Array.isArray(state.txEvents))
+      txEvents       = state.txEvents.map(e => ({ ...e, chain: e.chain || [] }));
+    if (state.monthHistory)     monthHistory     = state.monthHistory;
+    if (state.monthNotes)       monthNotes       = state.monthNotes;
+    if (typeof state.accountBalance === 'number') accountBalance = state.accountBalance;
+    if (Array.isArray(state.templates))           templates      = state.templates;
+    if (Array.isArray(state.settlementHistory))   settlementHistory = state.settlementHistory;
+    if (state.currencySymbol)   currencySymbol   = state.currencySymbol;
+    if (state.currencyLocale)   currencyLocale   = state.currencyLocale;
+    if (typeof state.isDarkTheme === 'boolean')   isDarkTheme    = state.isDarkTheme;
+    if (state.activeProfile)    activeProfile    = state.activeProfile;
+    if (Array.isArray(state.connections) && state.connections.length) {
+      connections = state.connections;
+      // Always keep default credentials hardcoded
+      const def = connections.find(c => c.id === 'default');
+      if (def) {
+        def.clientId  = typeof DEFAULT_CLIENT_ID   !== 'undefined' ? DEFAULT_CLIENT_ID   : def.clientId;
+        def.sheetId   = typeof SPREADSHEET_ID      !== 'undefined' ? SPREADSHEET_ID      : def.sheetId;
+        def.sheetName = typeof DEFAULT_SHEET_NAME  !== 'undefined' ? DEFAULT_SHEET_NAME  : def.sheetName;
+      }
+      if (typeof activeConn !== 'undefined') activeConn = connections[0];
+    }
+    console.log('patch-v6: state restored from localStorage', new Date(state._ts).toLocaleTimeString());
+    return true;
+  } catch(e) {
+    console.warn('lsLoad failed:', e);
+    return false;
+  }
+};
+
+// Hook lsSave into markDirty if it exists, otherwise set up a periodic save
+window.addEventListener('load', () => {
+  // Run lsLoad immediately to restore state before any render
+  if (window.lsLoad()) {
+    // State restored — re-run recalc and UI updates
+    if (typeof applyTheme        === 'function') applyTheme();
+    if (typeof recalc            === 'function') recalc();
+    if (typeof updateEventsBadge === 'function') updateEventsBadge();
+    if (typeof buildNotifications=== 'function') buildNotifications();
+    if (typeof renderTemplates   === 'function') renderTemplates();
+    if (typeof setProfile        === 'function') setProfile(activeProfile || 'trevin');
+  }
+
+  // Hook into markDirty
+  if (typeof markDirty === 'function') {
+    const _origMD = window.markDirty;
+    window.markDirty = function() {
+      _origMD();
+      window.lsSave();
+    };
+  } else {
+    // Fallback — auto-save every 10 seconds and on key interactions
+    setInterval(window.lsSave, 10000);
+  }
+
+  // Also save on page unload/hide
+  window.addEventListener('beforeunload', window.lsSave);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') window.lsSave();
+  });
+
+  console.log('patch-v6: persistence hooks installed');
+});
+
+// ── PATCH handleMasterUpload to call lsSave after overwrite ────
+// The existing patch-v5 handleMasterUpload calls lsSave at the end —
+// since we've now overridden lsSave to be complete, this just works.
+// But wrap it to be sure:
+window.addEventListener('load', () => {
+  if (typeof handleMasterUpload === 'function') {
+    const _orig = window.handleMasterUpload;
+    window.handleMasterUpload = function(event) {
+      _orig(event);
+      // Give the reader time to finish, then save
+      setTimeout(() => {
+        window.lsSave();
+        console.log('patch-v6: post-master-upload save completed');
+      }, 500);
+    };
+  }
+});
+
+// ── CATEGORY: accept any new value in global table ─────────────
+// The category select already has a "+ New..." option in the main code.
+// This patch ensures that any new category entered also gets persisted
+// and displayed with a neutral colour if not in CAT_COLORS.
+window.addEventListener('load', () => {
+  const origCatColors = typeof CAT_COLORS !== 'undefined' ? CAT_COLORS : {};
+  // Proxy: any category not in CAT_COLORS returns a neutral colour
+  window.getCatColor = function(cat) {
+    return origCatColors[cat] || '#888780';
+  };
+  console.log('patch-v6: open category colours active');
+});
