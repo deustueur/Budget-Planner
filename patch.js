@@ -851,3 +851,163 @@ window.downloadHistoryBank = function() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsExp.length ? itemsExp : [{}]), 'Items');
   XLSX.writeFile(wb, 'Budget_History_Bank.xlsx');
 };
+
+// ══════════════════════════════════════════════════════════════
+// COMPREHENSIVE HISTORY BANK DOWNLOAD
+// ══════════════════════════════════════════════════════════════
+window.downloadHistoryBank = function() {
+  if (typeof XLSX === 'undefined') { alert('Excel library not ready.'); return; }
+  const wb = XLSX.utils.book_new();
+  
+  const summaryRows = [['Month', 'Total Income', 'Total Expenses', 'Balance', 'Saved', 'Trevin Expenses', 'Dulini Expenses', 'Source File', 'Uploaded']];
+  
+  // Combine all known months from all site memory layers
+  const allKeys = new Set([
+    ...Object.keys(window._insightHistory || {}),
+    ...Object.keys(window.monthHistory || {}),
+    ...Object.keys(window.trackerData || {})
+  ]);
+
+  Array.from(allKeys).sort().forEach(key => {
+    const e = (window._insightHistory && window._insightHistory[key]) || {};
+    const h = e.snapshot || (window.monthHistory && window.monthHistory[key]) || {};
+    const td = e.trackerSnapshot || (window.trackerData && window.trackerData[key]) || {};
+    
+    // Skip completely blank internal scaffolding months
+    if (!h.totalIncome && !h.totalExpenses && Object.keys(td).length === 0) return;
+
+    const [y, m] = key.split('-');
+    const label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+    summaryRows.push([
+      label,
+      h.totalIncome || 0, h.totalExpenses || 0,
+      (h.totalIncome || 0) - (h.totalExpenses || 0),
+      h.totalSaved || 0,
+      h.perPerson?.trevin?.expenses || 0,
+      h.perPerson?.dulini?.expenses || 0,
+      e.fileName || 'Site Memory', e.uploadedAt ? new Date(e.uploadedAt).toLocaleDateString() : '—'
+    ]);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
+
+  // Per-month tracker actuals sheets (for ALL memory)
+  Array.from(allKeys).sort().forEach(key => {
+    const e = (window._insightHistory && window._insightHistory[key]) || {};
+    const td = e.trackerSnapshot || (window.trackerData && window.trackerData[key]) || {};
+    if (Object.keys(td).length === 0) return;
+
+    const [y, m] = key.split('-');
+    const label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+    const rows = [['ItemKey', 'ActualValue', 'MonthYear']];
+    Object.entries(td).forEach(([k, v]) => { if (k !== 'routes') rows.push([k, v, key]); });
+    try { XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), label.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 31)); } catch(e2) {}
+  });
+
+  const itemsExp = items.map(i => ({ ID: i.id, Type: i.type, Name: i.name, Amount: i.val, Frequency: i.freq, Category: i.cat || '', BudgetTag: i.tag || '', Purpose: i.purpose || '', Owner: i.owner, Active: i.on, DueDay: i.dueDay || 0, BufferDays: i.bufferDays || 0, SplitTrevin: i.splitRatio?.trevin || 0, SplitDulini: i.splitRatio?.dulini || 0 }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsExp.length ? itemsExp : [{}]), 'Items');
+  XLSX.writeFile(wb, 'Budget_History_Bank.xlsx');
+};
+
+// ══════════════════════════════════════════════════════════════
+// IMPORT QUEUE RED 'X' & MULTI-SHEET PARSER
+// ══════════════════════════════════════════════════════════════
+window.removeQueuedFile = function(index) {
+  if (typeof importQueue !== 'undefined') {
+    importQueue.splice(index, 1);
+    if (typeof renderImportPreview === 'function') window.renderImportPreview();
+  }
+};
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    // Override the renderer to inject the Red 'X'
+    if (typeof renderImportPreview === 'function') {
+      window.renderImportPreview = function() {
+        const el = document.getElementById('import-local-preview');
+        if (!importQueue.length) { el.innerHTML = ''; return; }
+        
+        let html = `<div style="font-size:12px;font-weight:600;margin-bottom:10px;">${importQueue.length} dataset${importQueue.length > 1 ? 's' : ''} ready to import:</div>`;
+        
+        importQueue.forEach((f, fi) => {
+          const statusColor = f.error ? 'var(--danger)' : f.monthKey ? 'var(--accent)' : 'var(--warning)';
+          const statusText = f.error ? 'Error: ' + f.error : f.monthKey ? '→ ' + keyToLabel(f.monthKey) : 'Month not detected';
+          
+          html += `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span style="font-size:12px;font-weight:500;"><i class="ti ti-file-spreadsheet" style="color:var(--info);"></i> ${f.filename}</span>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:10px;color:${statusColor};">${statusText}</span>
+                <button onclick="window.removeQueuedFile(${fi})" style="width:20px;height:20px;border-radius:99px;border:1px solid var(--danger);background:var(--danger-light);color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;line-height:1;padding:0;" title="Remove file">&times;</button>
+              </div>
+            </div>
+            ${!f.monthKey && !f.error ? `<div style="margin-top:7px;display:flex;align-items:center;gap:7px;">
+              <span style="font-size:11px;color:var(--text2);">Assign to:</span>
+              <select class="form-select" style="width:auto;font-size:11px;" onchange="importQueue[${fi}].monthKey=this.value; window.renderImportPreview();">
+                <option value="">— select month —</option>
+                ${generateMonthOptions()}
+              </select>
+            </div>` : ''}
+            ${f.rows && f.rows.length > 0 ? `<div style="font-size:10px;color:var(--text3);margin-top:4px;">${f.rows.length} rows detected</div>` : ''}
+          </div>`;
+        });
+        el.innerHTML = html;
+        document.getElementById('import-confirm-btn').style.display = '';
+      };
+    }
+
+    // Override the file handler to read MULTIPLE sheets (to support History Bank uploads)
+    if (typeof handleImportFiles === 'function') {
+      window.handleImportFiles = function(files) {
+        if (!files || !files.length) return;
+        window.importQueue = [];
+        const fileArr = Array.from(files);
+        let processed = 0;
+        const preview = document.getElementById('import-local-preview');
+        if (preview) preview.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Processing ${fileArr.length} file${fileArr.length > 1 ? 's' : ''}...</div>`;
+        
+        fileArr.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = ev => {
+            try {
+              if (file.name.endsWith('.csv')) {
+                const rows = parseCSVtoRows(ev.target.result);
+                const monthKey = detectMonthFromFilename(file.name);
+                window.importQueue.push({ filename: file.name, monthKey, rows, source: 'local' });
+              } else {
+                const wb = XLSX.read(ev.target.result, { type: 'binary' });
+                
+                // Parse every sheet in the workbook
+                wb.SheetNames.forEach(sheetName => {
+                  // Skip system/meta sheets
+                  if (['Summary', 'Items', 'Config', 'Instruments', 'Savings', 'Events', 'Dashboard'].includes(sheetName)) return;
+                  
+                  const rows = parseCSVtoRows(XLSX.utils.sheet_to_csv(wb.Sheets[sheetName]));
+                  if (!rows || rows.length === 0) return;
+                  
+                  // Detect month from the sheet name first, then fallback to filename
+                  const monthKey = detectMonthFromFilename(sheetName) || detectMonthFromFilename(file.name);
+                  
+                  window.importQueue.push({
+                    filename: wb.SheetNames.length > 3 ? `${file.name} — [${sheetName}]` : file.name,
+                    monthKey,
+                    rows,
+                    source: 'local'
+                  });
+                });
+              }
+            } catch(err) {
+              window.importQueue.push({ filename: file.name, monthKey: null, rows: [], source: 'local', error: err.message });
+            }
+            processed++;
+            if (processed === fileArr.length && typeof window.renderImportPreview === 'function') {
+              window.renderImportPreview();
+            }
+          };
+          if (file.name.endsWith('.csv')) reader.readAsText(file);
+          else reader.readAsBinaryString(file);
+        });
+      };
+    }
+  }, 800);
+});
+
