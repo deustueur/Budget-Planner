@@ -1800,3 +1800,172 @@ window.openDriveMasterPicker = async function() {
     }
   });
 };
+
+// ══════════════════════════════════════════════════════════════
+// 25. ULTIMATE BACKEND SAVE (Excel as Full Deep Memory)
+// ══════════════════════════════════════════════════════════════
+
+// --- 1. The Deep Memory Export ---
+window.downloadMasterTemplate = function() {
+  if (typeof XLSX === 'undefined') { alert('Excel library loading, try again in a second.'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // A. Configuration & State
+  const confExp = [
+    { key: 'accountBalance', value: typeof accountBalance !== 'undefined' ? accountBalance : 0 },
+    { key: 'activeProfile', value: typeof activeProfile !== 'undefined' ? activeProfile : 'trevin' }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(confExp), 'Config');
+
+  // B. Items
+  const itemsExp = items.map(i => ({
+    ID: i.id, Type: i.type, Name: i.name, Amount: i.val || 0, Frequency: i.freq || 'monthly',
+    Category: i.cat || '', Purpose: i.purpose || '', Owner: i.owner || 'shared',
+    Active: i.on ? 'TRUE' : 'FALSE', DueDay: i.dueDay || 0, BufferDays: i.bufferDays || 0,
+    SplitTrevin: i.splitRatio?.trevin || 0, SplitDulini: i.splitRatio?.dulini || 0
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsExp.length ? itemsExp : [{}]), 'Items');
+
+  // C. Savings & Instruments
+  const savExp = (typeof savingsStreams !== 'undefined' ? savingsStreams : []).map(s => ({
+    ID: s.id, Name: s.name, Balance: s.balance || 0, Goal: s.goal || 0, Owner: s.owner || 'shared'
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(savExp.length ? savExp : [{}]), 'Savings');
+
+  const instExp = (typeof instruments !== 'undefined' ? instruments : []).map(i => ({
+    ID: i.id, Name: i.name, Type: i.type || 'loan', Capital: i.capital || 0, Rate: i.rate || 0,
+    Period: i.period || 0, Monthly: i.monthly || 0, Start: i.start || '', Owner: i.owner || 'shared'
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(instExp.length ? instExp : [{}]), 'Instruments');
+
+  // D. ALL Tracker Data (Captures every typed amount for every month)
+  const trackerRows = [];
+  if (typeof trackerData !== 'undefined') {
+    Object.keys(trackerData).forEach(my => {
+      Object.keys(trackerData[my]).forEach(k => {
+        if (k !== 'routes') trackerRows.push({ MonthYear: my, ItemKey: k, ActualValue: trackerData[my][k] });
+      });
+    });
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trackerRows.length ? trackerRows : [{ MonthYear:'', ItemKey:'', ActualValue:'' }]), 'TrackerActuals');
+
+  // E. ALL Month History (Captures the Insights dashboard calculations)
+  const historyRows = [];
+  if (typeof monthHistory !== 'undefined') {
+    Object.keys(monthHistory).forEach(my => {
+      const h = monthHistory[my];
+      historyRows.push({
+        MonthYear: my,
+        TotalIncome: h.totalIncome || 0, TotalExpenses: h.totalExpenses || 0,
+        TotalSaved: h.totalSaved || 0,
+        TrevinExp: h.perPerson?.trevin?.expenses || 0, DuliniExp: h.perPerson?.dulini?.expenses || 0,
+        TrevinInc: h.perPerson?.trevin?.income || 0, DuliniInc: h.perPerson?.dulini?.income || 0,
+        Imported: h.imported ? 'TRUE' : 'FALSE'
+      });
+    });
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(historyRows.length ? historyRows : [{}]), 'MonthHistory');
+
+  XLSX.writeFile(wb, 'Budget_Site_Master_Full.xlsx');
+};
+
+// --- 2. The Deep Memory Import (Nuclear Wipe + Full Restore) ---
+window.handleMasterUpload = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Restoring Backend Database...');
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+
+      // PHASE 1: THE NUCLEAR WIPE
+      window.items = []; window.savingsStreams = []; window.instruments = [];
+      window.trackerData = {}; window.monthHistory = {}; window._insightHistory = {};
+
+      // PHASE 2: RESTORE CONFIG & ITEMS
+      if (wb.Sheets['Config']) {
+        const conf = XLSX.utils.sheet_to_json(wb.Sheets['Config']);
+        const balRow = conf.find(c => c.key === 'accountBalance');
+        if (balRow) window.accountBalance = parseFloat(balRow.value) || 0;
+      }
+      if (wb.Sheets['Items']) {
+        window.items = XLSX.utils.sheet_to_json(wb.Sheets['Items']).filter(r => r.Name).map(r => ({
+          id: r.ID || Math.random().toString(36).slice(2),
+          type: (r.Type || '').toLowerCase(), name: r.Name, val: parseFloat(r.Amount) || 0,
+          freq: (r.Frequency || 'monthly').toLowerCase(), cat: (r.Category || '').toLowerCase(),
+          purpose: (r.Purpose || '').toLowerCase(), owner: (r.Owner || 'shared').toLowerCase(),
+          on: String(r.Active).toUpperCase() === 'TRUE',
+          dueDay: parseInt(r.DueDay) || 0, bufferDays: parseInt(r.BufferDays) || 0,
+          splitRatio: { trevin: parseFloat(r.SplitTrevin) || 0, dulini: parseFloat(r.SplitDulini) || 0 },
+          history: []
+        }));
+      }
+      if (wb.Sheets['Savings']) {
+        window.savingsStreams = XLSX.utils.sheet_to_json(wb.Sheets['Savings']).filter(r => r.Name).map(r => ({
+          id: r.ID || Math.random().toString(36).slice(2), name: r.Name, balance: parseFloat(r.Balance) || 0,
+          goal: parseFloat(r.Goal) || 0, owner: (r.Owner || 'shared').toLowerCase(), history: []
+        }));
+      }
+      if (wb.Sheets['Instruments']) {
+        window.instruments = XLSX.utils.sheet_to_json(wb.Sheets['Instruments']).filter(r => r.Name).map(r => ({
+          id: r.ID || Math.random().toString(36).slice(2), name: r.Name, type: (r.Type || 'loan').toLowerCase(),
+          capital: parseFloat(r.Capital) || 0, rate: parseFloat(r.Rate) || 0, period: parseInt(r.Period) || 0,
+          monthly: parseFloat(r.Monthly) || 0, start: r.Start || '', owner: (r.Owner || 'shared').toLowerCase()
+        }));
+      }
+
+      // PHASE 3: RESTORE DEEP MEMORY (Tracker Actuals)
+      if (wb.Sheets['TrackerActuals']) {
+        XLSX.utils.sheet_to_json(wb.Sheets['TrackerActuals']).forEach(r => {
+          if (r.MonthYear && r.ItemKey) {
+            if (!window.trackerData[r.MonthYear]) window.trackerData[r.MonthYear] = {};
+            window.trackerData[r.MonthYear][r.ItemKey] = parseFloat(r.ActualValue) || 0;
+          }
+        });
+      }
+
+      // PHASE 4: RESTORE DEEP MEMORY (Month History & Insights)
+      if (wb.Sheets['MonthHistory']) {
+        XLSX.utils.sheet_to_json(wb.Sheets['MonthHistory']).forEach(r => {
+          if (r.MonthYear) {
+            window.monthHistory[r.MonthYear] = {
+              totalIncome: parseFloat(r.TotalIncome) || 0,
+              totalExpenses: parseFloat(r.TotalExpenses) || 0,
+              balance: (parseFloat(r.TotalIncome) || 0) - (parseFloat(r.TotalExpenses) || 0),
+              totalSaved: parseFloat(r.TotalSaved) || 0,
+              perPerson: {
+                trevin: { expenses: parseFloat(r.TrevinExp) || 0, income: parseFloat(r.TrevinInc) || 0 },
+                dulini: { expenses: parseFloat(r.DuliniExp) || 0, income: parseFloat(r.DuliniInc) || 0 }
+              },
+              imported: String(r.Imported).toUpperCase() === 'TRUE'
+            };
+            
+            // Re-populate the History Bank view so you can see them in Insights
+            window._insightHistory[r.MonthYear] = {
+              fileName: 'Restored from Master Database',
+              uploadedAt: Date.now(),
+              snapshot: JSON.parse(JSON.stringify(window.monthHistory[r.MonthYear])),
+              trackerSnapshot: window.trackerData[r.MonthYear] ? JSON.parse(JSON.stringify(window.trackerData[r.MonthYear])) : {}
+            };
+          }
+        });
+      }
+
+      // PHASE 5: HARD SAVE TO CACHE & REBOOT
+      window.lsSave();
+      
+      if (confirm('Master Site Database loaded successfully.\n\nAll existing data was wiped and rebuilt strictly from the Excel file. The site will now refresh.')) {
+        location.reload();
+      }
+
+    } catch(err) {
+      if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Database Restore Failed');
+      alert('Error replacing site data. Ensure the Excel format is correct.\n\n' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
