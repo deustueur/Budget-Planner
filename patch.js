@@ -392,8 +392,10 @@ window.addEventListener('load', () => {
   window.getCatColor = function(cat) {
     const map = typeof CAT_COLORS !== 'undefined' ? CAT_COLORS : {};
     return map[cat] || '#888780';
+  }; // <--- THESE CLOSING BRACKETS WERE MISSING
+});  // <--- THESE CLOSING BRACKETS WERE MISSING
 
-    // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 8. DASHBOARD LAYOUT RE-STRUCTURING
 // ══════════════════════════════════════════════════════════════
 window.addEventListener('load', () => {
