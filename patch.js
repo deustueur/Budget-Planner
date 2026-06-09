@@ -447,6 +447,15 @@ window.addEventListener('load', () => {
           // Hide the bottom numbers to save space, make side text smaller
           catChart.options.scales.x.ticks = { display: false };
           catChart.options.scales.y.ticks = { font: { size: 9 } };
+          
+          // Boost the tiny bars so they don't disappear
+          const data = catChart.data.datasets[0].data;
+          if (data && data.length) {
+            const maxVal = Math.max(...data);
+            catChart.data.datasets[0].data = data.map(v => {
+              if (v === 0) return 0;
+              const norm = v / maxVal;
+              return maxVal * Math.max(0.15, norm); // Floor at 15% of max width
             });
           }
           catChart.update('none');
@@ -1359,64 +1368,3 @@ window.addEventListener('load', () => {
     };
   }
 });
-
-// ══════════════════════════════════════════════════════════════
-// 17. PERSISTENT BACKUP TO SPECIFIC DRIVE FOLDER
-// ══════════════════════════════════════════════════════════════
-window.saveIndefiniteSnapshot = async function(fileName) {
-  if (typeof accessToken === 'undefined' || !accessToken) return;
-  
-  // This is YOUR specific ID for the "Months/Bulk" folder
-  const TARGET_FOLDER_ID = '1h1N9FxY0WZGcXWwUGjBGz5Jf1PPozIXk'; 
-  
-  const stateData = localStorage.getItem('bp_state_v7');
-  const blob = new Blob([stateData], { type: 'application/json' });
-  
-  // Explicitly tell Drive to put this file inside the target folder
-  const meta = { 
-    name: fileName, 
-    parents: [TARGET_FOLDER_ID] 
-  };
-  
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
-  form.append('file', blob);
-
-  try {
-    await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + accessToken },
-      body: form
-    });
-    console.log('Snapshot successfully saved to folder: ' + TARGET_FOLDER_ID);
-  } catch(e) {
-    console.error('Failed to save snapshot:', e);
-    alert('Backup to Drive failed: ' + e.message);
-  }
-};
-
-// ══════════════════════════════════════════════════════════════
-// 18. AUTO-SAVE & AUTO-DRIVE SYNC ENGINE
-// ══════════════════════════════════════════════════════════════
-window.addEventListener('load', () => {
-  // 1. Hook into refresh/close/tab-switch
-  const triggerSave = async () => {
-    window.lsSave(); // Save to local browser state
-    if (typeof window.saveIndefiniteSnapshot === 'function' && accessToken) {
-      // Save snapshot to the specific "Months/Bulk" folder
-      await window.saveIndefiniteSnapshot('AUTO_SAVE_SNAPSHOT_' + new Date().toISOString() + '.json');
-    }
-  };
-
-  // Trigger on tab closing or refreshing
-  window.addEventListener('beforeunload', triggerSave);
-  
-  // Trigger when you switch away from the tab or minimize the window
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      triggerSave();
-    }
-  });
-});
-
-
