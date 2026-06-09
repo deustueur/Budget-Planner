@@ -1677,3 +1677,126 @@ window.restoreFromCloudSnapshot = async function() {
     if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Cloud sync failed');
   }
 };
+
+// ══════════════════════════════════════════════════════════════
+// 23. VISUAL GOOGLE DRIVE FILE PICKER MENU
+// ══════════════════════════════════════════════════════════════
+
+// 1. The Core UI for the Visual File Picker
+window.showCustomDrivePicker = async function(folderId, mimeType, callback) {
+  if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Loading Drive files...');
+  try {
+    let query = `'${folderId}' in parents and trashed = false`;
+    if (mimeType) query += ` and mimeType='${mimeType}'`;
+    // Fetch the 15 most recent files in the specific folder
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&orderBy=modifiedTime desc&pageSize=15`;
+    
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+    const data = await res.json();
+    
+    if (!data.files || data.files.length === 0) {
+      alert('No files found in this folder.');
+      if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Ready');
+      return;
+    }
+
+    // Build the visual overlay menu
+    let pickerOverlay = document.getElementById('custom-drive-picker');
+    if (!pickerOverlay) {
+      pickerOverlay = document.createElement('div');
+      pickerOverlay.id = 'custom-drive-picker';
+      pickerOverlay.className = 'modal-overlay open';
+      pickerOverlay.innerHTML = `
+        <div class="modal" style="max-height:80vh; display:flex; flex-direction:column; width: 400px; max-width: 95%;">
+          <div class="modal-head">
+            <span class="modal-title"><i class="ti ti-brand-google-drive" style="color:var(--info);"></i> Select File from Drive</span>
+            <button class="modal-close" onclick="document.getElementById('custom-drive-picker').remove()"><i class="ti ti-x"></i></button>
+          </div>
+          <div id="drive-picker-list" style="padding:16px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px;">
+          </div>
+        </div>
+      `;
+      document.body.appendChild(pickerOverlay);
+    } else {
+      pickerOverlay.classList.add('open');
+    }
+
+    // Populate the list with clickable file cards
+    const listContainer = document.getElementById('drive-picker-list');
+    listContainer.innerHTML = data.files.map(f => {
+      const date = new Date(f.modifiedTime).toLocaleString();
+      return `<div style="padding:12px; border:1px solid var(--border); border-radius:var(--radius); cursor:pointer; background:var(--surface2); transition:all 0.2s;" 
+                   onclick="document.getElementById('custom-drive-picker').remove(); window._drivePickerCallback('${f.id}', '${f.name}', '${f.modifiedTime}')"
+                   onmouseover="this.style.background='var(--surface3)'; this.style.borderColor='var(--accent)';" 
+                   onmouseout="this.style.background='var(--surface2)'; this.style.borderColor='var(--border)';">
+                <div style="font-weight:600; font-size:13px; color:var(--text1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${f.name}</div>
+                <div style="font-size:11px; color:var(--text3); margin-top:4px;"><i class="ti ti-clock"></i> ${date}</div>
+              </div>`;
+    }).join('');
+
+    // Attach the action to be executed when a file is clicked
+    window._drivePickerCallback = callback;
+    if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Select a file');
+
+  } catch(e) {
+    alert('Failed to load file list: ' + e.message);
+    if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Picker failed');
+  }
+};
+
+
+// 2. Override the "Sync from Cloud" Button to use the Picker
+window.restoreFromCloudSnapshot = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  // Your "Site Cache / State" folder
+  const CACHE_FOLDER_ID = '1bRgzrxmEcFQeKICx611sg4HY3XlzEDiE';
+  
+  window.showCustomDrivePicker(CACHE_FOLDER_ID, 'application/json', async (fileId, fileName, modifiedTime) => {
+    const saveDate = new Date(modifiedTime).toLocaleString();
+    if (!confirm(`Overwrite site memory with this Cloud Cache?\n\nFile: ${fileName}\nDate: ${saveDate}`)) return;
+
+    try {
+      if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Downloading cache...');
+      const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { 'Authorization': 'Bearer ' + accessToken }
+      });
+      const jsonText = await fileRes.text();
+      localStorage.setItem('bp_state_v7', jsonText);
+      alert('Cache applied! Reloading site...');
+      location.reload(); 
+    } catch(e) {
+      alert('Failed to restore from cloud cache: ' + e.message); 
+      if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Cloud sync failed');
+    }
+  });
+};
+
+
+// 3. Override the "Load Master from Drive" (Excel) Button to use the Picker
+window.openDriveMasterPicker = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  // Your "Master Site Database" folder
+  const TARGET_FOLDER_ID = '1nHM5aiylC0kE6Km7W_US9Z_TWlcWpxKh';
+  
+  // Fetch files (ignoring mimeType so it grabs your Excel files)
+  window.showCustomDrivePicker(TARGET_FOLDER_ID, '', async (fileId, fileName) => {
+    try {
+      if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Downloading Master...');
+      const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { 'Authorization': 'Bearer ' + accessToken }
+      });
+      const blob = await fileRes.arrayBuffer();
+      
+      // Feed it into the aggressive Excel overwrite logic we built earlier
+      if (typeof window.handleMasterUpload === 'function') {
+        window.handleMasterUpload({ target: { files: [new File([blob], fileName)] } });
+        if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Loaded: ' + fileName);
+      }
+    } catch(e) {
+      alert('Failed to load from Drive: ' + e.message); 
+      if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Drive load failed');
+    }
+  });
+};
