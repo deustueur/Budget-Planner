@@ -1011,3 +1011,212 @@ window.addEventListener('load', () => {
   }, 800);
 });
 
+// ══════════════════════════════════════════════════════════════
+// 14. HISTORY BANK LOOP: Human-Readable Export & Import Math Fix
+// ══════════════════════════════════════════════════════════════
+
+// --- Fix 1: Human-Readable History Bank Export & Blank Template ---
+window.downloadHistoryBank = function() {
+  if (typeof XLSX === 'undefined') { alert('Excel library not ready.'); return; }
+  const wb = XLSX.utils.book_new();
+
+  const allKeys = new Set([
+    ...Object.keys(window._insightHistory || {}),
+    ...Object.keys(window.monthHistory || {}),
+    ...Object.keys(window.trackerData || {})
+  ]);
+
+  const summaryRows = [['Month', 'Total Income', 'Total Expenses', 'Balance', 'Saved', 'Trevin Expenses', 'Dulini Expenses', 'Source File', 'Uploaded']];
+
+  if (allKeys.size > 0) {
+    Array.from(allKeys).sort().forEach(key => {
+      const e = (window._insightHistory && window._insightHistory[key]) || {};
+      const h = e.snapshot || (window.monthHistory && window.monthHistory[key]) || {};
+      const td = e.trackerSnapshot || (window.trackerData && window.trackerData[key]) || {};
+      if (!h.totalIncome && !h.totalExpenses && Object.keys(td).length === 0) return;
+
+      const [y, m] = key.split('-');
+      const label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+      summaryRows.push([
+        label, h.totalIncome || 0, h.totalExpenses || 0, (h.totalIncome || 0) - (h.totalExpenses || 0), h.totalSaved || 0,
+        h.perPerson?.trevin?.expenses || 0, h.perPerson?.dulini?.expenses || 0,
+        e.fileName || 'Site Memory', e.uploadedAt ? new Date(e.uploadedAt).toLocaleDateString() : '—'
+      ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
+  }
+
+  // Generate Data Tabs for every month in memory (or a blank one if empty)
+  const exportMonths = allKeys.size > 0 ? Array.from(allKeys).sort() : ['template'];
+
+  exportMonths.forEach(key => {
+    let td = {};
+    let label = 'Template - ' + (typeof MS !== 'undefined' ? MS[new Date().getMonth()] : '') + ' ' + new Date().getFullYear();
+
+    if (key !== 'template') {
+      const e = (window._insightHistory && window._insightHistory[key]) || {};
+      td = e.trackerSnapshot || (window.trackerData && window.trackerData[key]) || {};
+      if (Object.keys(td).length === 0) return;
+      const [y, m] = key.split('-');
+      label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+    }
+
+    // Build human-readable rows
+    const rows = [['Item', 'Type', 'Budget', 'Actual']];
+    const inc = items.filter(i => i.type === 'income');
+    const exp = items.filter(i => i.type === 'expense');
+
+    inc.forEach(i => {
+      const a = td['inc_' + i.id];
+      rows.push([i.name, 'Income', i.val, a !== undefined ? a : '']);
+    });
+    exp.forEach(i => {
+      const a = td['exp_' + i.id];
+      rows.push([i.name, 'Expense', i.val, a !== undefined ? a : '']);
+    });
+
+    const sheetName = label.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 31);
+    try { XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheetName); } catch(e2) {}
+  });
+
+  // Maintain items configuration
+  const itemsExp = items.map(i => ({ ID: i.id, Type: i.type, Name: i.name, Amount: i.val, Frequency: i.freq, Category: i.cat || '', BudgetTag: i.tag || '', Purpose: i.purpose || '', Owner: i.owner, Active: i.on, DueDay: i.dueDay || 0, BufferDays: i.bufferDays || 0, SplitTrevin: i.splitRatio?.trevin || 0, SplitDulini: i.splitRatio?.dulini || 0 }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsExp.length ? itemsExp : [{}]), 'Items');
+  XLSX.writeFile(wb, 'Budget_History_Bank.xlsx');
+};
+
+// --- Fix 2: Proper Upload Math to Feed the Insights Charts ---
+window.processImportRows = function(rows, monthKey) {
+  if (!trackerData[monthKey]) trackerData[monthKey] = {};
+  const td = trackerData[monthKey];
+
+  let actualIncome = 0;
+  let actualExpenses = 0;
+  let trevinExp = 0;
+  let duliniExp = 0;
+
+  rows.forEach(row => {
+    // Map from the human-readable 'Item' and 'Actual' columns
+    const name = (row['item'] || row['name'] || row['description'] || '').trim().toLowerCase();
+    const actual = parseFloat(row['actual'] || row['actual (lkr)'] || row['amount'] || 0) || 0;
+    if (!name || !actual) return;
+
+    const matchedItem = items.find(i => i.name.toLowerCase() === name || i.name.toLowerCase().includes(name.split(' ')[0]));
+    if (matchedItem && actual > 0) {
+      const prefix = matchedItem.type === 'income' ? 'inc_' : 'exp_';
+      td[prefix + matchedItem.id] = actual;
+
+      if (matchedItem.type === 'income') {
+        actualIncome += actual;
+      } else {
+        actualExpenses += actual;
+        if (matchedItem.owner === 'trevin') trevinExp += actual;
+        else if (matchedItem.owner === 'dulini') duliniExp += actual;
+        else {
+          trevinExp += actual * ((matchedItem.splitRatio?.trevin || 50) / 100);
+          duliniExp += actual * ((matchedItem.splitRatio?.dulini || 50) / 100);
+        }
+      }
+    }
+  });
+
+  // Calculate the Insights history purely based on your typed actuals
+  monthHistory[monthKey] = {
+    totalIncome: actualIncome,
+    totalExpenses: actualExpenses,
+    balance: actualIncome - actualExpenses,
+    totalSaved: 0,
+    perPerson: { trevin: { expenses: trevinExp, income: 0 }, dulini: { expenses: duliniExp, income: 0 } },
+    imported: true
+  };
+};
+
+// --- Fix 3: Red 'X' on Bulk Upload Queue ---
+window.removeQueuedFile = function(index) {
+  if (typeof importQueue !== 'undefined') {
+    importQueue.splice(index, 1);
+    if (typeof renderImportPreview === 'function') window.renderImportPreview();
+  }
+};
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if (typeof renderImportPreview === 'function') {
+      window.renderImportPreview = function() {
+        const el = document.getElementById('import-local-preview');
+        if (!importQueue.length) { el.innerHTML = ''; return; }
+        
+        let html = `<div style="font-size:12px;font-weight:600;margin-bottom:10px;">${importQueue.length} dataset${importQueue.length > 1 ? 's' : ''} ready to import:</div>`;
+        importQueue.forEach((f, fi) => {
+          const statusColor = f.error ? 'var(--danger)' : f.monthKey ? 'var(--accent)' : 'var(--warning)';
+          const statusText = f.error ? 'Error: ' + f.error : f.monthKey ? '→ ' + window.keyToLabel(f.monthKey) : 'Select month';
+          
+          html += `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span style="font-size:12px;font-weight:500;"><i class="ti ti-file-spreadsheet" style="color:var(--info);"></i> ${f.filename}</span>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:10px;color:${statusColor};">${statusText}</span>
+                <button onclick="window.removeQueuedFile(${fi})" style="width:20px;height:20px;border-radius:99px;border:1px solid var(--danger);background:var(--danger-light);color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;line-height:1;padding:0;" title="Remove file">&times;</button>
+              </div>
+            </div>
+            ${!f.monthKey && !f.error ? `<div style="margin-top:7px;display:flex;align-items:center;gap:7px;">
+              <select class="form-select" style="width:auto;font-size:11px;" onchange="importQueue[${fi}].monthKey=this.value; window.renderImportPreview();">
+                <option value="">— select month —</option>
+                ${window.generateMonthOptions()}
+              </select>
+            </div>` : ''}
+          </div>`;
+        });
+        el.innerHTML = html;
+        document.getElementById('import-confirm-btn').style.display = '';
+      };
+    }
+  }, 900);
+});
+
+// ══════════════════════════════════════════════════════════════
+// 13. DASHBOARD MONTHLY HISTORY CARDS - RED 'X' DELETE
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if (typeof renderHistoryGrid === 'function') {
+      window.renderHistoryGrid = function() {
+        const months = Object.keys(monthHistory).sort().reverse();
+        const countEl = document.getElementById('history-count');
+        if (countEl) countEl.textContent = months.length + ' month' + (months.length !== 1 ? 's' : '');
+        
+        const grid = document.getElementById('history-grid');
+        if (!grid) return;
+        
+        if (!months.length) {
+          grid.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0;">No history yet. Save a month in the Tracker to begin.</div>';
+          return;
+        }
+        
+        grid.innerHTML = months.map(key => {
+          const h = monthHistory[key];
+          const bal = (h.totalIncome || 0) - (h.totalExpenses || 0);
+          const [y, m] = key.split('-');
+          
+          return `<div class="history-card" style="position:relative;" onclick="loadHistoryDetail('${key}',this)">
+            <!-- The Red 'X' Delete Button -->
+            <button onclick="event.stopPropagation(); if(window.deleteHistoryEntry) window.deleteHistoryEntry('${key}')" 
+                    style="position:absolute; top:2px; right:4px; width:16px; height:16px; border-radius:50%; border:none; background:transparent; color:var(--danger); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; padding:0; transition:all 0.15s;"
+                    onmouseover="this.style.background='var(--danger)'; this.style.color='#fff';"
+                    onmouseout="this.style.background='transparent'; this.style.color='var(--danger)';">
+              &times;
+            </button>
+            <div style="font-size:12px;font-weight:600;">${typeof MS !== 'undefined' ? MS[+m] : m}</div>
+            <div style="font-size:10px;color:var(--text3);">${y}</div>
+            <div style="font-size:11px;font-weight:600;margin-top:3px;color:${bal >= 0 ? 'var(--accent)' : 'var(--danger)'};">${bal >= 0 ? '+' : ''}${typeof fmt === 'function' ? fmt(bal) : bal}</div>
+          </div>`;
+        }).join('');
+      };
+      
+      // If we are already on the insights tab, re-render it immediately
+      if (document.getElementById('tab-insights')?.classList.contains('active')) {
+        window.renderHistoryGrid();
+      }
+    }
+  }, 600);
+});
