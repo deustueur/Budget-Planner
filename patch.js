@@ -1521,3 +1521,68 @@ window.openDriveMasterPicker = async function() {
     alert('Failed to load from Drive: ' + e.message); 
   }
 };
+
+// ══════════════════════════════════════════════════════════════
+// 21. CROSS-DEVICE CLOUD SYNC (Restore from Auto-Save JSON)
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    // Inject the Restore button directly into the top sync bar next to your Save/Connect buttons
+    const syncActions = document.querySelector('.header-actions') || document.getElementById('sync-bar') || document.body;
+    if (syncActions && !document.getElementById('btn-cloud-restore')) {
+      const restoreBtn = document.createElement('button');
+      restoreBtn.id = 'btn-cloud-restore';
+      restoreBtn.className = 'btn btn-sm';
+      restoreBtn.style.cssText = 'background:var(--warning-light);color:var(--warning);border-color:var(--warning);margin-left:8px;';
+      restoreBtn.innerHTML = '<i class="ti ti-cloud-download"></i> Sync from Cloud';
+      restoreBtn.onclick = window.restoreFromCloudSnapshot;
+      syncActions.appendChild(restoreBtn);
+    }
+  }, 1500);
+});
+
+window.restoreFromCloudSnapshot = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  // Your specific folder ID for "Months/Bulk/Auto-Saves"
+  const SNAPSHOT_FOLDER_ID = '1h1N9FxY0WZGcXWwUGjBGz5Jf1PPozIXk';
+  
+  try {
+    if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Finding latest cloud save...');
+    
+    // Query Google Drive for the absolute most recent JSON auto-save
+    const url = `https://www.googleapis.com/drive/v3/files?q='${SNAPSHOT_FOLDER_ID}'+in+parents+and+mimeType='application/json'&orderBy=modifiedTime desc&pageSize=1`;
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+    const data = await res.json();
+    
+    if (!data.files || data.files.length === 0) { 
+      alert('No cloud saves found in your auto-save folder.'); 
+      if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Ready');
+      return; 
+    }
+    
+    const file = data.files[0];
+    const saveDate = new Date(file.modifiedTime).toLocaleString();
+    
+    if (!confirm(`Overwrite this browser's memory with your latest Cloud Save?\n\nDate: ${saveDate}`)) {
+        if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Ready');
+        return;
+    }
+
+    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    
+    const jsonText = await fileRes.text();
+    
+    // Overwrite the local browser's memory with the Cloud JSON
+    localStorage.setItem('bp_state_v7', jsonText);
+    
+    alert('Cloud sync successful! Reloading site to apply data...');
+    location.reload(); // Refresh the page to load the new, synchronized memory
+    
+  } catch(e) { 
+    alert('Failed to restore from cloud: ' + e.message); 
+    if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Cloud sync failed');
+  }
+};
