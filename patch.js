@@ -392,5 +392,40 @@ window.addEventListener('load', () => {
   window.getCatColor = function(cat) {
     const map = typeof CAT_COLORS !== 'undefined' ? CAT_COLORS : {};
     return map[cat] || '#888780';
-  };
+
+    // ══════════════════════════════════════════════════════════════
+// 8. DASHBOARD LAYOUT RE-STRUCTURING
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  // Find the exact elements in your HTML
+  const twoCol = document.querySelector('#tab-dashboard .two-col');
+  const incomeCard = document.getElementById('income-card');
+  const catChartCanvas = document.getElementById('catChart');
+  
+  if (twoCol && incomeCard && catChartCanvas) {
+    const chartCard = catChartCanvas.closest('.chart-card');
+    
+    // 1. Create a new vertical wrapper for the left side
+    const leftColumn = document.createElement('div');
+    leftColumn.style.display = 'flex';
+    leftColumn.style.flexDirection = 'column';
+    leftColumn.style.gap = '14px'; // Matches your site's standard spacing
+    
+    // 2. Inject the wrapper into the grid, and move Income inside it
+    twoCol.insertBefore(leftColumn, incomeCard);
+    leftColumn.appendChild(incomeCard);
+    
+    // 3. Pull the Chart up from the bottom and place it right under Income
+    leftColumn.appendChild(chartCard);
+    
+    // 4. Force the chart to shrink and fit its new, narrower home
+    catChartCanvas.style.width = '100%';
+    
+    // Tell Chart.js to recalculate its size so it doesn't break out of the box
+    setTimeout(() => {
+        if (typeof catChart !== 'undefined' && catChart.resize) {
+            catChart.resize();
+        }
+    }, 100);
+  }
 });
