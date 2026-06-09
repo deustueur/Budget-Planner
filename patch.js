@@ -1969,3 +1969,141 @@ window.handleMasterUpload = function(event) {
   };
   reader.readAsArrayBuffer(file);
 };
+
+// ══════════════════════════════════════════════════════════════
+// 26. TRUE HARD OVERWRITE (Direct LocalStorage & Cache Injection)
+// ══════════════════════════════════════════════════════════════
+
+window.handleMasterUpload = async function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Executing Hard Overwrite...');
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+
+      // 1. Build fresh containers
+      let newItems = [];
+      let newSavings = [];
+      let newInst = [];
+      let newTracker = {};
+      let newMonthHist = {};
+      let newInsightHist = {};
+      let newBalance = 0;
+
+      // 2. Extract Data from Excel (If a column is empty/shifted, it safely becomes 0)
+      if (wb.Sheets['Config']) {
+        const conf = XLSX.utils.sheet_to_json(wb.Sheets['Config']);
+        const balRow = conf.find(c => c.key === 'accountBalance');
+        if (balRow) newBalance = parseFloat(balRow.value) || 0;
+      }
+
+      if (wb.Sheets['Items']) {
+        newItems = XLSX.utils.sheet_to_json(wb.Sheets['Items']).filter(r => r.Name).map(r => ({
+          id: r.ID || Math.random().toString(36).slice(2),
+          type: (r.Type || '').toLowerCase(), name: r.Name, val: parseFloat(r.Amount) || 0,
+          freq: (r.Frequency || 'monthly').toLowerCase(), cat: (r.Category || '').toLowerCase(),
+          purpose: (r.Purpose || '').toLowerCase(), owner: (r.Owner || 'shared').toLowerCase(),
+          on: String(r.Active).toUpperCase() === 'TRUE',
+          dueDay: parseInt(r.DueDay) || 0, bufferDays: parseInt(r.BufferDays) || 0,
+          splitRatio: { trevin: parseFloat(r.SplitTrevin) || 0, dulini: parseFloat(r.SplitDulini) || 0 },
+          history: []
+        }));
+      }
+
+      if (wb.Sheets['Savings']) {
+        newSavings = XLSX.utils.sheet_to_json(wb.Sheets['Savings']).filter(r => r.Name).map(r => ({
+          id: r.ID || Math.random().toString(36).slice(2), name: r.Name, 
+          balance: parseFloat(r.Balance) || 0, goal: parseFloat(r.Goal) || 0, 
+          owner: (r.Owner || 'shared').toLowerCase(), history: []
+        }));
+      }
+
+      if (wb.Sheets['Instruments']) {
+        newInst = XLSX.utils.sheet_to_json(wb.Sheets['Instruments']).filter(r => r.Name).map(r => ({
+          id: r.ID || Math.random().toString(36).slice(2), name: r.Name, type: (r.Type || 'loan').toLowerCase(),
+          capital: parseFloat(r.Capital) || 0, rate: parseFloat(r.Rate) || 0, period: parseInt(r.Period) || 0,
+          monthly: parseFloat(r.Monthly) || 0, start: r.Start || '', owner: (r.Owner || 'shared').toLowerCase()
+        }));
+      }
+
+      if (wb.Sheets['TrackerActuals']) {
+        XLSX.utils.sheet_to_json(wb.Sheets['TrackerActuals']).forEach(r => {
+          if (r.MonthYear && r.ItemKey) {
+            if (!newTracker[r.MonthYear]) newTracker[r.MonthYear] = {};
+            newTracker[r.MonthYear][r.ItemKey] = parseFloat(r.ActualValue) || 0;
+          }
+        });
+      }
+
+      if (wb.Sheets['MonthHistory']) {
+        XLSX.utils.sheet_to_json(wb.Sheets['MonthHistory']).forEach(r => {
+          if (r.MonthYear) {
+            newMonthHist[r.MonthYear] = {
+              totalIncome: parseFloat(r.TotalIncome) || 0, totalExpenses: parseFloat(r.TotalExpenses) || 0,
+              balance: (parseFloat(r.TotalIncome) || 0) - (parseFloat(r.TotalExpenses) || 0),
+              totalSaved: parseFloat(r.TotalSaved) || 0,
+              perPerson: {
+                trevin: { expenses: parseFloat(r.TrevinExp) || 0, income: parseFloat(r.TrevinInc) || 0 },
+                dulini: { expenses: parseFloat(r.DuliniExp) || 0, income: parseFloat(r.DuliniInc) || 0 }
+              },
+              imported: String(r.Imported).toUpperCase() === 'TRUE'
+            };
+            
+            newInsightHist[r.MonthYear] = {
+              fileName: 'Restored from Master Database',
+              uploadedAt: Date.now(),
+              snapshot: JSON.parse(JSON.stringify(newMonthHist[r.MonthYear])),
+              trackerSnapshot: newTracker[r.MonthYear] ? JSON.parse(JSON.stringify(newTracker[r.MonthYear])) : {}
+            };
+          }
+        });
+      }
+
+      // 3. THE HARD INJECTION: Create the absolute raw state package
+      const hardState = {
+        items: newItems,
+        trackerData: newTracker,
+        savingsStreams: newSavings,
+        instruments: newInst,
+        txEvents: [], // Wipes old events
+        monthHistory: newMonthHist,
+        monthNotes: {},
+        accountBalance: newBalance,
+        templates: typeof templates !== 'undefined' ? templates : [],
+        settlementHistory: typeof settlementHistory !== 'undefined' ? settlementHistory : [],
+        currencySymbol: typeof currencySymbol !== 'undefined' ? currencySymbol : 'LKR',
+        currencyLocale: typeof currencyLocale !== 'undefined' ? currencyLocale : 'en-LK',
+        isDarkTheme: typeof isDarkTheme !== 'undefined' ? isDarkTheme : false,
+        activeProfile: typeof activeProfile !== 'undefined' ? activeProfile : 'trevin',
+        connections: typeof connections !== 'undefined' ? connections : [],
+        insightHistory: newInsightHist,
+        _v: 7,
+        _ts: Date.now()
+      };
+
+      // 4. OVERWRITE BROWSER CACHE DIRECTLY (Bypasses the site's save functions)
+      localStorage.setItem('bp_state_v7', JSON.stringify(hardState));
+
+      // 5. OVERWRITE DRIVE CLOUD CACHE (So it doesn't try to restore the old data on reload)
+      if (typeof window.saveIndefiniteSnapshot === 'function') {
+        if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Updating Cloud Cache...');
+        await window.saveIndefiniteSnapshot('HARD_OVERWRITE_' + new Date().toISOString() + '.json');
+      }
+
+      // 6. KILL AND RESTART
+      if (confirm('HARD OVERWRITE COMPLETE.\n\nThe database has been forcibly replaced with your Excel file.\nThe site will now restart to load your new data.')) {
+        location.reload();
+      }
+
+    } catch(err) {
+      if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Hard Overwrite Failed');
+      alert('Error replacing site data. Ensure the Excel format is correct.\n\n' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
