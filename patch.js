@@ -1475,3 +1475,49 @@ window.addEventListener('load', () => {
     });
   }
 });
+
+// ══════════════════════════════════════════════════════════════
+// 20. GOOGLE DRIVE MASTER SYNC OVERRIDE (Target Folder & Most Recent)
+// ══════════════════════════════════════════════════════════════
+window.openDriveMasterPicker = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  // The specific folder ID you provided for the Master Site Database
+  const TARGET_FOLDER_ID = '1nHM5aiylC0kE6Km7W_US9Z_TWlcWpxKh';
+  
+  try {
+    if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Fetching Master file...');
+    
+    // Query targets the folder and explicitly sorts by modifiedTime descending, limiting to 1 result
+    const url = `https://www.googleapis.com/drive/v3/files?q='${TARGET_FOLDER_ID}'+in+parents&orderBy=modifiedTime desc&pageSize=1`;
+    
+    const res = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const data = await res.json();
+    
+    if (!data.files || data.files.length === 0) { 
+      if (typeof setSyncStatus === 'function') setSyncStatus('error', 'No files found in folder');
+      alert('No files found in the target folder.'); 
+      return; 
+    }
+    
+    // Auto-pick the first file (which is guaranteed to be the most recent)
+    const file = data.files[0];
+    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const blob = await fileRes.arrayBuffer();
+    
+    // Feed the file content to your existing handleMasterUpload logic
+    if (typeof window.handleMasterUpload === 'function') {
+      window.handleMasterUpload({ target: { files: [new File([blob], file.name)] } });
+      if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Loaded: ' + file.name);
+    } else {
+      alert('Upload handler not found.');
+    }
+  } catch(e) { 
+    if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Drive load failed');
+    alert('Failed to load from Drive: ' + e.message); 
+  }
+};
