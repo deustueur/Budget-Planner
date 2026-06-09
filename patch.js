@@ -431,3 +431,36 @@ window.addEventListener('load', () => {
     }, 100);
   }
 });
+
+// ══════════════════════════════════════════════════════════════
+// 9. CHART NORMALIZATION (Make small expenses visible)
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if (typeof updateCatChart === 'function') {
+      const _origUCC = window.updateCatChart;
+      window.updateCatChart = function() {
+        _origUCC(); // Run the original chart calculation
+        
+        // Now tweak the visuals
+        if (typeof catChart !== 'undefined' && catChart) {
+          // Hide the bottom numbers to save space, make side text smaller
+          catChart.options.scales.x.ticks = { display: false };
+          catChart.options.scales.y.ticks = { font: { size: 9 } };
+          
+          // Boost the tiny bars so they don't disappear
+          const data = catChart.data.datasets[0].data;
+          if (data && data.length) {
+            const maxVal = Math.max(...data);
+            catChart.data.datasets[0].data = data.map(v => {
+              if (v === 0) return 0;
+              const norm = v / maxVal;
+              return maxVal * Math.max(0.15, norm); // Floor at 15% of max width
+            });
+          }
+          catChart.update('none');
+        }
+      };
+    }
+  }, 400); // Wait a split second for the site to load before patching
+});
