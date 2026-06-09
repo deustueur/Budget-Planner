@@ -1220,3 +1220,41 @@ window.addEventListener('load', () => {
     }
   }, 600);
 });
+
+// --- Fix 4: Synchronize Tracker Tags with Dashboard ---
+window.addEventListener('load', () => {
+  if (typeof buildTrackerRow === 'function') {
+    const _origBTR = window.buildTrackerRow;
+    window.buildTrackerRow = function(item, prefix, b, a, v, month, year, tkey) {
+      // 1. Get the original HTML string for the row
+      const rowHtml = _origBTR(item, prefix, b, a, v, month, year, tkey);
+      
+      // 2. Parse it into a temporary DOM element
+      const temp = document.createElement('table');
+      temp.innerHTML = `<tbody>${rowHtml}</tbody>`;
+      const tr = temp.querySelector('tr');
+      
+      if (tr) {
+        const firstTd = tr.querySelector('td');
+        if (firstTd) {
+          // 3. Strip out the old, hardcoded tag
+          const oldBadge = firstTd.querySelector('.purpose-badge');
+          if (oldBadge) oldBadge.remove();
+          
+          // 4. Inject the new dynamic tag (if the item has a purpose)
+          if (item.purpose && typeof window.purposeBadgeHtml === 'function') {
+            const badgeContainer = document.createElement('span');
+            badgeContainer.innerHTML = window.purposeBadgeHtml(item.purpose, item.id);
+            const badge = badgeContainer.firstChild;
+            if (badge) {
+              badge.style.marginLeft = '5px'; // Add spacing so it matches the tracker UI
+              firstTd.appendChild(badge);
+            }
+          }
+        }
+        return tr.outerHTML; // Return the newly patched row HTML
+      }
+      return rowHtml; // Fallback in case of parsing error
+    };
+  }
+});
