@@ -464,3 +464,390 @@ window.addEventListener('load', () => {
     }
   }, 400); // Wait a split second for the site to load before patching
 });
+
+// ══════════════════════════════════════════════════════════════
+// 10. FULL SHEET REBUILD ENGINE (Live Formulas & Formatting)
+// ══════════════════════════════════════════════════════════════
+
+// 1. Wire the "Overwrite now" button from your UI to the Rebuild Engine
+window.executeOverwrite = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  const sheetIdEl = document.getElementById('ow-sheet-id');
+  const sheetNameEl = document.getElementById('ow-sheet-name');
+  
+  if (sheetIdEl && sheetIdEl.value && typeof activeConn !== 'undefined') {
+    activeConn.sheetId = sheetIdEl.value.trim();
+  }
+  if (sheetNameEl && sheetNameEl.value && typeof activeConn !== 'undefined') {
+    activeConn.sheetName = sheetNameEl.value.trim();
+  }
+  
+  const overlay = document.getElementById('overwrite-overlay');
+  if (overlay) overlay.classList.remove('open');
+  
+  window.executeFullSheetRebuild();
+};
+
+// 2. Intercept the Master Upload to prompt the Rebuild Engine
+if (typeof window.handleMasterUpload === 'function') {
+  const _origHMU = window.handleMasterUpload;
+  window.handleMasterUpload = function(event) {
+    _origHMU(event); // Run the standard upload and memory replacement
+    
+    // Wait 2.1 seconds for the original upload's UI closing animation to finish, then prompt
+    setTimeout(() => {
+      if (typeof accessToken !== 'undefined' && accessToken) {
+        if (confirm('Site updated from master file.\n\nOverwrite the Google Sheet to match the site now?\n\nThis fully rebuilds the sheet with formulas.')) {
+          window.executeFullSheetRebuild();
+        }
+      }
+    }, 2100); 
+  };
+}
+
+// 3. The Core Rebuild Engine
+window.executeFullSheetRebuild = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  const sheetId = (typeof activeConn !== 'undefined') ? activeConn.sheetId : (typeof SPREADSHEET_ID !== 'undefined' ? SPREADSHEET_ID : null);
+  if (!sheetId) { alert('No sheet ID found.'); return; }
+  const sheetName = (typeof activeConn !== 'undefined') ? activeConn.sheetName : (typeof DEFAULT_SHEET_NAME !== 'undefined' ? DEFAULT_SHEET_NAME : 'Dynamic Budget Planner');
+
+  if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Full sheet rebuild...');
+
+  try {
+    const _api = window.apiCall || async function(method, url, body) {
+      const opts = { method, headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' } };
+      if (body !== undefined) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    };
+
+    // Get existing sheets
+    const meta = await _api('GET', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`);
+    const existingSheets = meta.sheets.map(s => ({ title: s.properties.title, id: s.properties.sheetId }));
+
+    const needed = [sheetName, 'Tracker', 'Savings', 'Instruments', 'Events', 'Data'];
+    const batchReqs = [];
+
+    // Delete ALL existing sheets by renaming the first one, deleting the rest, and adding fresh ones
+    batchReqs.push({ updateSheetProperties: { properties: { sheetId: existingSheets[0].id, title: '__temp_keep__' }, fields: 'title' } });
+    existingSheets.slice(1).forEach(s => batchReqs.push({ deleteSheet: { sheetId: s.id } }));
+    needed.forEach(title => batchReqs.push({ addSheet: { properties: { title } } }));
+    
+    await _api('POST', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, { requests: batchReqs });
+
+    // Now delete the temp sheet
+    const meta2 = await _api('GET', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`);
+    const tempSheet = meta2.sheets.find(s => s.properties.title === '__temp_keep__');
+    if (tempSheet) {
+      await _api('POST', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
+        requests: [{ deleteSheet: { sheetId: tempSheet.properties.sheetId } }]
+      });
+    }
+
+    const inc = items.filter(i => i.type === 'income');
+    const exp = items.filter(i => i.type === 'expense');
+    const cur = (typeof currencySymbol !== 'undefined') ? currencySymbol : 'LKR';
+    const toMo = (typeof toMonthly === 'function') ? toMonthly : (v) => v;
+
+    // ── DASHBOARD TAB ─────────────────────────────────────────
+    const dashRows = [];
+    dashRows.push(['TREVIN & DULINI — BUDGET PLANNER', '', '', '', new Date().toLocaleDateString()]);
+    dashRows.push(['', '', '', '', '']);
+
+    const incStartRow = dashRows.length + 1;
+    dashRows.push(['INCOME', 'Budget (' + cur + ')', 'Owner', 'Purpose', '']);
+    inc.forEach(i => dashRows.push([i.name, i.on ? Math.round(toMo(i.val, i.freq)) : 0, i.owner, i.purpose || '', '']));
+    const incEndRow = dashRows.length;
+    dashRows.push(['Total Income', `=SUM(B${incStartRow + 1}:B${incEndRow})`, '', '', '']);
+    const totalIncRow = dashRows.length;
+    
+    dashRows.push(['', '', '', '', '']);
+    
+    const expStartRow = dashRows.length + 1;
+    dashRows.push(['EXPENSES', 'Budget (' + cur + ')', 'Category', 'Purpose', '']);
+    exp.forEach(i => dashRows.push([i.name, i.on ? Math.round(toMo(i.val, i.freq)) : 0, i.cat || '', i.purpose || '', '']));
+    const expEndRow = dashRows.length;
+    dashRows.push(['Total Expenses', `=SUM(B${expStartRow + 1}:B${expEndRow})`, '', '', '']);
+    const totalExpRow = dashRows.length;
+    
+    dashRows.push(['', '', '', '', '']);
+    dashRows.push(['Monthly Balance', `=B${totalIncRow}-B${totalExpRow}`, '', '', `=IF(B${dashRows.length}>0,"✅ SURPLUS","⚠️ DEFICIT")`]);
+    const balanceRow = dashRows.length;
+    dashRows.push(['Savings Rate', `=IFERROR(SUMIF(D${incStartRow+1}:D${expEndRow},"saving",B${incStartRow+1}:B${expEndRow})/B${totalIncRow}*100,0)&"%"`, '', '', '']);
+    dashRows.push(['Daily Budget', `=IFERROR(B${balanceRow}/30,0)`, '', '', '']);
+
+    await _api('PUT', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'"+sheetName+"'!A1")}?valueInputOption=USER_ENTERED`, { values: dashRows });
+
+    // ── TRACKER TAB ───────────────────────────────────────────
+    const now = new Date();
+    const tkey = now.getFullYear() + '-' + now.getMonth();
+    const td = (typeof trackerData !== 'undefined' && trackerData[tkey]) ? trackerData[tkey] : {};
+    
+    const trackerRows = [];
+    trackerRows.push([`TRACKER — ${typeof MS !== 'undefined' ? MS[now.getMonth()] : ''} ${now.getFullYear()}`, '', '', '', '', '']);
+    trackerRows.push(['Item', 'Budget', 'Actual', 'Variance', 'Owner', 'Purpose']);
+    
+    trackerRows.push(['INCOME', '', '', '', '', '']);
+    const tIncStart = trackerRows.length;
+    inc.forEach(i => {
+      const b = i.on ? Math.round(toMo(i.val, i.freq)) : 0;
+      const a = td['inc_' + i.id] !== undefined && td['inc_' + i.id] !== '' ? td['inc_' + i.id] : '';
+      const row = trackerRows.length + 1;
+      trackerRows.push([i.name, b, a !== '' ? a : '', a !== '' ? `=C${row}-B${row}` : '', i.owner, i.purpose || '']);
+    });
+    const tIncEnd = trackerRows.length;
+    trackerRows.push(['Total Income', `=SUM(B${tIncStart+1}:B${tIncEnd})`, `=SUM(C${tIncStart+1}:C${tIncEnd})`, `=C${trackerRows.length+1}-B${trackerRows.length+1}`, '', '']);
+    const tTotalIncRow = trackerRows.length;
+    
+    trackerRows.push(['', '', '', '', '', '']);
+    
+    trackerRows.push(['EXPENSES', '', '', '', '', '']);
+    const tExpStart = trackerRows.length;
+    exp.forEach(i => {
+      const b = i.on ? Math.round(toMo(i.val, i.freq)) : 0;
+      const a = td['exp_' + i.id] !== undefined && td['exp_' + i.id] !== '' ? td['exp_' + i.id] : '';
+      const row = trackerRows.length + 1;
+      trackerRows.push([i.name, b, a !== '' ? a : '', a !== '' ? `=B${row}-C${row}` : '', i.owner, i.purpose || '']);
+    });
+    const tExpEnd = trackerRows.length;
+    trackerRows.push(['Total Expenses', `=SUM(B${tExpStart+1}:B${tExpEnd})`, `=SUM(C${tExpStart+1}:C${tExpEnd})`, `=B${trackerRows.length+1}-C${trackerRows.length+1}`, '', '']);
+    const tTotalExpRow = trackerRows.length;
+    
+    trackerRows.push(['', '', '', '', '', '']);
+    trackerRows.push(['Net Balance', `=B${tTotalIncRow}-B${tTotalExpRow}`, `=C${tTotalIncRow}-C${tTotalExpRow}`, `=C${trackerRows.length+1}-B${trackerRows.length+1}`, '', '']);
+
+    await _api('PUT', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'Tracker'!A1")}?valueInputOption=USER_ENTERED`, { values: trackerRows });
+
+    // ── SAVINGS TAB ───────────────────────────────────────────
+    const savRows = [['SAVINGS STREAMS','','','',''],['Name','Balance ('+cur+')','Goal ('+cur+')','Progress','Owner']];
+    if (typeof savingsStreams !== 'undefined') {
+      savingsStreams.forEach(s => {
+        const row = savRows.length + 1;
+        savRows.push([s.name, s.balance, s.goal||0, s.goal>0?`=IFERROR(B${row}/C${row}*100,0)&"%"`:'—', s.owner]);
+      });
+    }
+    savRows.push(['','','','','']);
+    savRows.push(['Total Saved', `=SUM(B3:B${savRows.length-1})`, '','','']);
+    
+    await _api('PUT', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'Savings'!A1")}?valueInputOption=USER_ENTERED`, { values: savRows });
+
+    // ── INSTRUMENTS TAB ───────────────────────────────────────
+    const instrRows = [['FINANCIAL INSTRUMENTS','','','','','','','','',''],['Name','Type','Capital ('+cur+')','Rate (%)','Period (mo)','Monthly ('+cur+')','Owner','Start','Total Cost','Total Interest']];
+    if (typeof instruments !== 'undefined') {
+      instruments.forEach(i => {
+        const row = instrRows.length + 1;
+        instrRows.push([i.name, i.type, i.capital||0, i.rate||0, i.period||0, i.monthly||0, i.owner, i.start||'', i.type==='loan'?`=F${row}*E${row}`:'', i.type==='loan'?`=I${row}-C${row}`:'']);
+      });
+    }
+    
+    await _api('PUT', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'Instruments'!A1")}?valueInputOption=USER_ENTERED`, { values: instrRows });
+
+    // ── EVENTS TAB ────────────────────────────────────────────
+    const evtRows = [['TRANSACTION EVENTS','','','','','',''],['Source Item','Amount ('+cur+')','Month','Year','Status','Routed To','Date']];
+    if (typeof txEvents !== 'undefined') {
+      txEvents.forEach(e => evtRows.push([e.sourceItem||'', e.amount||0, e.month, e.year, e.status||'', e.routeTargetName||'', e.dateLabel||'']));
+    }
+    evtRows.push(['','','','','','','']);
+    evtRows.push(['Total surplus routed', `=SUMIF(E3:E${evtRows.length-1},"tagged",B3:B${evtRows.length-1})`, '','','','','']);
+    
+    await _api('PUT', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'Events'!A1")}?valueInputOption=USER_ENTERED`, { values: evtRows });
+
+    // ── DATA TAB (sync source for pull) ──────────────────────
+    const dataRows = [
+      ['##META','version=3','Full rebuild by Budget Planner v7', new Date().toISOString()],
+      ['##INCOME',''],
+      ...inc.map(i => [i.name, i.on?Math.round(toMo(i.val,i.freq)):0, i.owner, i.purpose||'', i.dueDay||'']),
+      ['##EXPENSE',''],
+      ...exp.map(i => [i.name, i.on?Math.round(toMo(i.val,i.freq)):0, i.owner, i.purpose||'', i.dueDay||''])
+    ];
+    
+    await _api('PUT', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'Data'!A1")}?valueInputOption=USER_ENTERED`, { values: dataRows });
+
+    // ── CONDITIONAL FORMATTING ────────────────────────────────
+    const meta3 = await _api('GET', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`);
+    const sheetMap = {};
+    meta3.sheets.forEach(s => { sheetMap[s.properties.title] = s.properties.sheetId; });
+    
+    const fmtReqs = [];
+    
+    // Freeze headers
+    [sheetName, 'Tracker'].forEach(tab => {
+      if (sheetMap[tab] !== undefined) {
+        fmtReqs.push({ updateSheetProperties: { properties: { sheetId: sheetMap[tab], gridProperties: { frozenRowCount: 2 } }, fields: 'gridProperties.frozenRowCount' } });
+      }
+    });
+
+    // Balance green/red
+    if (sheetMap[sheetName] !== undefined) {
+      const bri = balanceRow - 1;
+      fmtReqs.push({ addConditionalFormatRule: { rule: { ranges: [{ sheetId: sheetMap[sheetName], startRowIndex: bri, endRowIndex: bri+1, startColumnIndex: 1, endColumnIndex: 2 }], booleanRule: { condition: { type: 'NUMBER_GREATER', values: [{ userEnteredValue: '0' }] }, format: { backgroundColor: { red:0.85,green:0.96,blue:0.88 }, textFormat: { foregroundColor: { red:0.05,green:0.49,blue:0.27 }, bold: true } } } }, index: 0 } });
+      fmtReqs.push({ addConditionalFormatRule: { rule: { ranges: [{ sheetId: sheetMap[sheetName], startRowIndex: bri, endRowIndex: bri+1, startColumnIndex: 1, endColumnIndex: 2 }], booleanRule: { condition: { type: 'NUMBER_LESS', values: [{ userEnteredValue: '0' }] }, format: { backgroundColor: { red:0.99,green:0.91,blue:0.91 }, textFormat: { foregroundColor: { red:0.89,green:0.18,blue:0.18 }, bold: true } } } }, index: 1 } });
+    }
+
+    // Tracker variance green/red
+    if (sheetMap['Tracker'] !== undefined) {
+      fmtReqs.push({ addConditionalFormatRule: { rule: { ranges: [{ sheetId: sheetMap['Tracker'], startRowIndex: 2, endRowIndex: 200, startColumnIndex: 3, endColumnIndex: 4 }], booleanRule: { condition: { type: 'NUMBER_GREATER', values: [{ userEnteredValue: '0' }] }, format: { textFormat: { foregroundColor: { red:0.05,green:0.49,blue:0.27 }, bold: true } } } }, index: 0 } });
+      fmtReqs.push({ addConditionalFormatRule: { rule: { ranges: [{ sheetId: sheetMap['Tracker'], startRowIndex: 2, endRowIndex: 200, startColumnIndex: 3, endColumnIndex: 4 }], booleanRule: { condition: { type: 'NUMBER_LESS', values: [{ userEnteredValue: '0' }] }, format: { textFormat: { foregroundColor: { red:0.89,green:0.18,blue:0.18 }, bold: true } } } }, index: 1 } });
+    }
+
+    if (fmtReqs.length) await _api('POST', `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, { requests: fmtReqs });
+
+    if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Sheet fully rebuilt');
+    if (typeof setLastSync === 'function') setLastSync();
+    
+    alert('✅ Google Sheet fully rebuilt!\n\nAll old data deleted. Fresh tabs with live formulas:\n• Dashboard, Tracker, Savings, Instruments, Events, Data\n\nConditional formatting applied.');
+
+  } catch(err) {
+    if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Rebuild failed: ' + err.message.slice(0,40));
+    console.error('Sheet rebuild failed:', err);
+    alert('Sheet rebuild failed: ' + err.message);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// 11. COMPOUNDING HISTORY BANK (Store, view, delete, download)
+// ══════════════════════════════════════════════════════════════
+
+// 1. Initialize the History Bank from local storage
+if (!window._insightHistory) {
+  try {
+    const stored = localStorage.getItem('bp_history_bank');
+    window._insightHistory = stored ? JSON.parse(stored) : {};
+  } catch(e) { window._insightHistory = {}; }
+}
+
+// 2. Patch lsSave to always save the History Bank
+const _origLsSaveHist = window.lsSave;
+window.lsSave = function() {
+  if (typeof _origLsSaveHist === 'function') _origLsSaveHist();
+  try { localStorage.setItem('bp_history_bank', JSON.stringify(window._insightHistory)); } catch(e) {}
+};
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    // 3. Inject UI into the Import Modal
+    const importOverlay = document.getElementById('import-overlay');
+    if (importOverlay) {
+      const modalHead = importOverlay.querySelector('.modal-head');
+      if (modalHead && !document.getElementById('btn-dl-history-bank')) {
+        const dlBtn = document.createElement('button');
+        dlBtn.id = 'btn-dl-history-bank';
+        dlBtn.className = 'btn btn-sm';
+        dlBtn.style.cssText = 'background:var(--info-light);color:var(--info);border-color:var(--info);margin-right:8px;';
+        dlBtn.innerHTML = '<i class="ti ti-download"></i> Download History Bank';
+        dlBtn.onclick = window.downloadHistoryBank;
+        modalHead.insertBefore(dlBtn, modalHead.lastElementChild);
+      }
+
+      const localPanel = document.getElementById('import-panel-local');
+      if (localPanel && !document.getElementById('history-bank-panel')) {
+        const bankEl = document.createElement('div');
+        bankEl.id = 'history-bank-panel';
+        bankEl.style.cssText = 'margin-top:14px;border-top:1px solid var(--border);padding-top:12px;';
+        bankEl.innerHTML = `
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">
+            Stored History Files
+          </div>
+          <div id="history-bank-list"></div>`;
+        localPanel.appendChild(bankEl);
+      }
+      window.renderHistoryBankList();
+    }
+
+    // 4. Intercept the Import function to save files to the Bank
+    if (typeof confirmImport === 'function' && !window._origConfirmImportPatched) {
+      const _origCI = window.confirmImport;
+      window._origConfirmImportPatched = true;
+      window.confirmImport = async function() {
+        await _origCI(); // Run original import
+        if (typeof importQueue !== 'undefined') {
+          importQueue.forEach(f => {
+            if (!f.monthKey || f.error) return;
+            window._insightHistory[f.monthKey] = {
+              fileName: f.filename,
+              uploadedAt: Date.now(),
+              monthKey: f.monthKey,
+              snapshot: monthHistory[f.monthKey] ? JSON.parse(JSON.stringify(monthHistory[f.monthKey])) : null,
+              trackerSnapshot: trackerData[f.monthKey] ? JSON.parse(JSON.stringify(trackerData[f.monthKey])) : null
+            };
+          });
+        }
+        window.lsSave();
+        window.renderHistoryBankList();
+      };
+    }
+  }, 800);
+});
+
+// 5. Render the list of files with Delete buttons
+window.renderHistoryBankList = function() {
+  const el = document.getElementById('history-bank-list');
+  if (!el) return;
+  const keys = Object.keys(window._insightHistory).sort().reverse();
+  if (!keys.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:8px 0;">No history files stored yet. Upload files above to build your history.</div>';
+    return;
+  }
+  
+  el.innerHTML = keys.map(key => {
+    const entry = window._insightHistory[key];
+    const [y, m] = key.split('-');
+    const label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+    const uploadDate = entry.uploadedAt ? new Date(entry.uploadedAt).toLocaleDateString() : '—';
+    return `<div style="display:flex;align-items:center;gap:9px;padding:7px 10px;background:var(--surface2);border-radius:var(--radius);margin-bottom:5px;font-size:12px;">
+      <i class="ti ti-calendar-stats" style="color:var(--accent);flex-shrink:0;font-size:14px;"></i>
+      <div style="flex:1;">
+        <strong>${label}</strong>
+        <span style="font-size:10px;color:var(--text3);margin-left:6px;">uploaded ${uploadDate} &middot; ${entry.fileName || 'file'}</span>
+      </div>
+      <button onclick="window.deleteHistoryEntry('${key}')" style="width:22px;height:22px;border-radius:99px;border:1px solid var(--danger);background:var(--danger-light);color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;line-height:1;flex-shrink:0;padding:0;" title="Remove from history bank">
+        &times;
+      </button>
+    </div>`;
+  }).join('');
+};
+
+// 6. Delete a file from the bank
+window.deleteHistoryEntry = function(key) {
+  if (!confirm(`Remove ${key} from history bank?`)) return;
+  delete window._insightHistory[key];
+  if (typeof monthHistory !== 'undefined') delete monthHistory[key];
+  if (typeof trackerData !== 'undefined') delete trackerData[key];
+  window.lsSave();
+  window.renderHistoryBankList();
+  if (typeof renderInsights === 'function') renderInsights();
+};
+
+// 7. Compile and Download the History Bank
+window.downloadHistoryBank = function() {
+  if (typeof XLSX === 'undefined') { alert('Excel library not ready.'); return; }
+  const wb = XLSX.utils.book_new();
+  
+  const summaryRows = [['Month', 'Total Income', 'Total Expenses', 'Balance', 'Saved', 'Trevin Expenses', 'Dulini Expenses', 'Source File', 'Uploaded']];
+  Object.keys(window._insightHistory).sort().forEach(key => {
+    const e = window._insightHistory[key];
+    const h = e.snapshot || monthHistory[key] || {};
+    const [y, m] = key.split('-');
+    const label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+    summaryRows.push([label, h.totalIncome || 0, h.totalExpenses || 0, (h.totalIncome || 0) - (h.totalExpenses || 0), h.totalSaved || 0, h.perPerson?.trevin?.expenses || 0, h.perPerson?.dulini?.expenses || 0, e.fileName || '', e.uploadedAt ? new Date(e.uploadedAt).toLocaleDateString() : '']);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
+
+  Object.keys(window._insightHistory).sort().forEach(key => {
+    const e = window._insightHistory[key];
+    const td = e.trackerSnapshot || trackerData[key] || {};
+    const [y, m] = key.split('-');
+    const label = (typeof MS !== 'undefined' ? MS[+m] : m) + ' ' + y;
+    const rows = [['ItemKey', 'ActualValue', 'MonthYear']];
+    Object.entries(td).forEach(([k, v]) => { if (k !== 'routes') rows.push([k, v, key]); });
+    try { XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), label.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 31)); } catch(e2) {}
+  });
+
+  const itemsExp = items.map(i => ({ ID: i.id, Type: i.type, Name: i.name, Amount: i.val, Frequency: i.freq, Category: i.cat || '', BudgetTag: i.tag || '', Purpose: i.purpose || '', Owner: i.owner, Active: i.on, DueDay: i.dueDay || 0, BufferDays: i.bufferDays || 0, SplitTrevin: i.splitRatio?.trevin || 0, SplitDulini: i.splitRatio?.dulini || 0 }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsExp.length ? itemsExp : [{}]), 'Items');
+  XLSX.writeFile(wb, 'Budget_History_Bank.xlsx');
+};
