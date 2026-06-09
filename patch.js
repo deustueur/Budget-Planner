@@ -1368,3 +1368,110 @@ window.addEventListener('load', () => {
     };
   }
 });
+
+// ══════════════════════════════════════════════════════════════
+// 19. BULLETPROOF AUTH RESTORE & AUTO-LOGIN
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  // 1. Override the Login function to GUARANTEE the token is cached
+  if (typeof window.connectWith === 'function') {
+    window.connectWith = function(connId) {
+      const conn = connections.find(c => c.id === connId);
+      if (!conn) return;
+      activeConn = conn;
+      if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Connecting to ' + conn.label + '...');
+      
+      if (typeof waitForGis === 'function') {
+        waitForGis(() => {
+          try {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+              client_id: conn.clientId,
+              scope: typeof SCOPES !== 'undefined' ? SCOPES : 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar',
+              callback: (resp) => {
+                if (resp.error) {
+                  if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Auth failed: ' + resp.error);
+                  return;
+                }
+                accessToken = resp.access_token;
+                conn.active = true;
+                
+                // CRITICAL: Force the token into the browser cache
+                localStorage.setItem('bp_google_token', accessToken);
+                
+                if (typeof closeConnModal === 'function') closeConnModal();
+                if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Connected — ' + conn.sheetName);
+                
+                // Turn on the UI Sync Bar buttons
+                ['btn-pull', 'btn-push', 'btn-overwrite', 'btn-cal'].forEach(id => {
+                  const el = document.getElementById(id);
+                  if (el) el.style.display = '';
+                });
+                const connBtn = document.getElementById('btn-connect');
+                if (connBtn) connBtn.innerHTML = '<i class="ti ti-plug"></i> Connections';
+                
+                // Trigger background loops
+                if (typeof startPolling === 'function') startPolling();
+                if (typeof sheetsPull === 'function') sheetsPull();
+                if (typeof checkAutoMonthSave === 'function') checkAutoMonthSave();
+              }
+            });
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+          } catch (e) {
+            if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Error: ' + e.message);
+          }
+        });
+      }
+    };
+  }
+
+  // 2. The Auto-Wake-Up Sequence (Fires on Page Refresh)
+  window.ALLOWED_USERS = ['deustueurtrevin@gmail.com', 'dulinimadushanki@gmail.com'];
+  const savedToken = localStorage.getItem('bp_google_token');
+  
+  if (savedToken) {
+    accessToken = savedToken;
+    console.log('Patch: Restored auth token from cache. Validating...');
+    if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Restoring session...');
+    
+    // Ping Google to make sure the cached token hasn't expired (lasts ~1 hour)
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo', { 
+      headers: { 'Authorization': 'Bearer ' + accessToken } 
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('Token expired');
+      return res.json();
+    })
+    .then(user => {
+      // Check if user is Trevin or Dulini
+      if (window.ALLOWED_USERS.includes(user.email)) {
+        if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Welcome back, ' + user.name);
+        
+        // Unhide all the sync bar buttons
+        ['btn-pull', 'btn-push', 'btn-overwrite', 'btn-cal'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = '';
+        });
+        const connBtn = document.getElementById('btn-connect');
+        if (connBtn) connBtn.innerHTML = '<i class="ti ti-plug"></i> Connections';
+        
+        // Resume background syncing
+        if (typeof startPolling === 'function') startPolling();
+        
+        // CRITICAL: Pull the latest data so the screen isn't blank!
+        if (typeof sheetsPull === 'function') sheetsPull();
+        
+      } else {
+        console.warn('User not authorized.');
+        localStorage.removeItem('bp_google_token');
+        accessToken = null;
+        if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Unauthorized user');
+      }
+    })
+    .catch(e => {
+      console.warn('Session expired or invalid:', e);
+      localStorage.removeItem('bp_google_token');
+      accessToken = null;
+      if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Session expired. Please click Connect.');
+    });
+  }
+});
