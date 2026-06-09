@@ -1258,3 +1258,113 @@ window.addEventListener('load', () => {
     };
   }
 });
+
+// ══════════════════════════════════════════════════════════════
+// 16. GOOGLE DRIVE MASTER SYNC (Load/Save from Drive Folders)
+// ══════════════════════════════════════════════════════════════
+
+// Add the 'Load from Drive' button to your Master Modal
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const modal = document.querySelector('#format-manager-overlay .modal');
+    if (modal && !document.getElementById('btn-load-from-drive')) {
+      const driveBtn = document.createElement('button');
+      driveBtn.id = 'btn-load-from-drive';
+      driveBtn.className = 'btn btn-sm';
+      driveBtn.style.cssText = 'width:100%;margin-top:8px;background:var(--purple-light);color:var(--purple);border-color:var(--purple);';
+      driveBtn.innerHTML = '<i class="ti ti-brand-google-drive"></i> Load Master from Drive';
+      driveBtn.onclick = openDriveMasterPicker;
+      modal.querySelector('.modal-head').parentElement.appendChild(driveBtn);
+    }
+  }, 1000);
+});
+
+// Drive File Picker Logic
+window.openDriveMasterPicker = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  // Scrape your 'Root' folder for Master files
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q='1Db6ijJ1tahblilXh98r6XGvp4WCLuNSf'+in+parents+and+name+contains+'Master'`, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const data = await res.json();
+    if (!data.files || data.files.length === 0) { alert('No Master files found in the root folder.'); return; }
+    
+    // Simplest approach: Auto-pick the most recent or prompt if multiple
+    const file = data.files[0];
+    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const blob = await fileRes.arrayBuffer();
+    
+    // Feed the file content to your existing handleMasterUpload logic
+    window.handleMasterUpload({ target: { files: [new File([blob], file.name)] } });
+    alert('Loaded: ' + file.name);
+  } catch(e) { alert('Failed to load from Drive: ' + e.message); }
+};
+
+// ══════════════════════════════════════════════════════════════
+// 17. PERSISTENT BACKUP TO DRIVE (Monthly/Bulk Folder)
+// ══════════════════════════════════════════════════════════════
+window.saveIndefiniteSnapshot = async function(fileName) {
+  if (typeof accessToken === 'undefined' || !accessToken) return;
+  
+  const FOLDER_ID = '1h1N9FxY0WZGcXWwUGjBGz5Jf1PPozIXk'; // Your "Months/Bulk" folder
+  const stateData = localStorage.getItem('bp_state_v7');
+  const blob = new Blob([stateData], { type: 'application/json' });
+  
+  const meta = { name: fileName, parents: [FOLDER_ID] };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+  form.append('file', blob);
+
+  await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + accessToken },
+    body: form
+  });
+  console.log('Snapshot saved to Drive indefinitely.');
+};
+
+// ══════════════════════════════════════════════════════════════
+// 14. PERMANENT GOOGLE AUTH & MULTI-USER ACCESS
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  // Allow Dulini to sign in
+  window.ALLOWED_USERS = ['deustueurtrevin@gmail.com', 'dulinimadushanki@gmail.com'];
+  
+  // Try to restore session
+  const savedToken = localStorage.getItem('bp_google_token');
+  if (savedToken) {
+    accessToken = savedToken;
+    console.log('Patch v7: Restored auth token from cache.');
+    // Validate token by fetching user profile
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { 'Authorization': 'Bearer ' + accessToken } })
+      .then(res => res.json())
+      .then(user => {
+        if (window.ALLOWED_USERS.includes(user.email)) {
+          setSyncStatus('connected', 'Welcome back, ' + user.name);
+          startPolling();
+        } else {
+          localStorage.removeItem('bp_google_token');
+          accessToken = null;
+        }
+      });
+  }
+});
+
+// Update your existing connectWith function to save the token
+// Add this line inside your callback after accessToken = resp.access_token;
+// localStorage.setItem('bp_google_token', accessToken);
+
+window.addEventListener('load', () => {
+  const saveBtn = document.querySelector('[onclick="saveFileAndSync()"]');
+  if (saveBtn) {
+    const _origSave = window.saveFileAndSync;
+    window.saveFileAndSync = async function() {
+      _origSave(); // Run your normal sync/save
+      await window.saveIndefiniteSnapshot('Backup_' + new Date().toISOString() + '.json');
+    };
+  }
+});
