@@ -1586,3 +1586,94 @@ window.restoreFromCloudSnapshot = async function() {
     if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Cloud sync failed');
   }
 };
+
+// ══════════════════════════════════════════════════════════════
+// 17. PERSISTENT BACKUP TO SITE CACHE FOLDER
+// ══════════════════════════════════════════════════════════════
+window.saveIndefiniteSnapshot = async function(fileName) {
+  if (typeof accessToken === 'undefined' || !accessToken) return;
+  
+  // CORRECTED: Pointing to the specific "Site Cache / State" folder
+  const CACHE_FOLDER_ID = '1bRgzrxmEcFQeKICx611sg4HY3XlzEDiE'; 
+  
+  const stateData = localStorage.getItem('bp_state_v7');
+  const blob = new Blob([stateData], { type: 'application/json' });
+  
+  const meta = { name: fileName, parents: [CACHE_FOLDER_ID] };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+  form.append('file', blob);
+
+  try {
+    await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken },
+      body: form
+    });
+    console.log('Site state successfully cached to folder: ' + CACHE_FOLDER_ID);
+  } catch(e) {
+    console.error('Failed to cache site state:', e);
+  }
+};
+
+
+// ══════════════════════════════════════════════════════════════
+// 21. CROSS-DEVICE CLOUD SYNC (Restore from Site Cache Folder)
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const syncActions = document.querySelector('.header-actions') || document.getElementById('sync-bar') || document.body;
+    if (syncActions && !document.getElementById('btn-cloud-restore')) {
+      const restoreBtn = document.createElement('button');
+      restoreBtn.id = 'btn-cloud-restore';
+      restoreBtn.className = 'btn btn-sm';
+      restoreBtn.style.cssText = 'background:var(--warning-light);color:var(--warning);border-color:var(--warning);margin-left:8px;';
+      restoreBtn.innerHTML = '<i class="ti ti-cloud-download"></i> Sync from Cloud';
+      restoreBtn.onclick = window.restoreFromCloudSnapshot;
+      syncActions.appendChild(restoreBtn);
+    }
+  }, 1500);
+});
+
+window.restoreFromCloudSnapshot = async function() {
+  if (typeof accessToken === 'undefined' || !accessToken) { alert('Connect to Google first.'); return; }
+  
+  // CORRECTED: Pointing to the specific "Site Cache / State" folder
+  const CACHE_FOLDER_ID = '1bRgzrxmEcFQeKICx611sg4HY3XlzEDiE';
+  
+  try {
+    if (typeof setSyncStatus === 'function') setSyncStatus('syncing', 'Finding latest site cache...');
+    
+    const url = `https://www.googleapis.com/drive/v3/files?q='${CACHE_FOLDER_ID}'+in+parents+and+mimeType='application/json'&orderBy=modifiedTime desc&pageSize=1`;
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+    const data = await res.json();
+    
+    if (!data.files || data.files.length === 0) { 
+      alert('No cloud cache found in your cache folder.'); 
+      if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Ready');
+      return; 
+    }
+    
+    const file = data.files[0];
+    const saveDate = new Date(file.modifiedTime).toLocaleString();
+    
+    if (!confirm(`Sync site with your latest Cloud Cache?\n\nDate: ${saveDate}`)) {
+        if (typeof setSyncStatus === 'function') setSyncStatus('connected', 'Ready');
+        return;
+    }
+
+    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    
+    const jsonText = await fileRes.text();
+    localStorage.setItem('bp_state_v7', jsonText);
+    
+    alert('Cache applied! Reloading site...');
+    location.reload(); 
+    
+  } catch(e) { 
+    alert('Failed to restore from cloud cache: ' + e.message); 
+    if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Cloud sync failed');
+  }
+};
