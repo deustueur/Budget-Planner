@@ -149,6 +149,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .purpose-badge.fund{background:var(--gold-light);color:var(--gold);border-color:var(--gold);}
 .purpose-badge.add{background:var(--surface3);color:var(--text3);border-color:var(--border);font-size:9px;}
 .purpose-badge.add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light);}
+.purpose-badge.earning{background:var(--info-light);color:var(--info);border-color:var(--info);}
+.purpose-badge.living{background:var(--purple-light);color:var(--purple);border-color:var(--purple);}
+.purpose-badge.vehicle{background:var(--warning-light);color:var(--warning);border-color:var(--warning);}
+.purpose-badge.entertainment{background:var(--pink-light);color:var(--pink);border-color:var(--pink);}
+.purpose-badge.custom-tag{background:var(--surface3);color:var(--text2);border-color:var(--border);}
 .due-badge{font-size:9px;padding:1px 5px;border-radius:4px;background:var(--surface3);color:var(--text3);flex-shrink:0;cursor:pointer;}
 .due-badge:hover{background:var(--warning-light);color:var(--warning);}
 .due-badge.soon{background:var(--warning-light);color:var(--warning);}
@@ -1475,7 +1480,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div><label class="form-label">Budget tag</label><select class="form-select" id="item-tag"><option value="fixed">Fixed</option><option value="variable">Variable</option><option value="discretionary">Discretionary</option></select></div>
   </div>
   <div class="form-row-2" style="display: none;">
-    <div><label class="form-label">Purpose tag</label><select class="form-select" id="item-purpose" onchange="updatePurposeRow()"><option value="">None</option><option value="saving">💚 Saving</option><option value="investment">📈 Investment</option><option value="loan">🔴 Loan</option><option value="fd">🔵 Fixed deposit</option><option value="fund">🟡 Fund</option></select></div>
+    <div><label class="form-label">Purpose tag</label><select class="form-select" id="item-purpose" onchange="updatePurposeRow()"><option value="">None</option><option value="saving">💚 Saving</option><option value="investment">📈 Investment</option><option value="loan">🔴 Loan</option><option value="fd">🔵 Fixed deposit</option><option value="fund">🟡 Fund</option><option value="earning">📥 Earning</option><option value="living">🏠 Living</option><option value="vehicle">🚗 Vehicle</option><option value="entertainment">🎬 Entertainment</option><option value="__custom">+ Custom tag...</option></select></div>
     <div><label class="form-label">Link instrument</label><select class="form-select" id="item-instr-link"><option value="">None</option></select></div>
   </div>
   <div class="form-row-2">
@@ -2035,8 +2040,10 @@ const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec
 const CAT_COLORS={obligations:'#378ADD',transport:'#BA7517',lifestyle:'#7F77DD',wellbeing:'#1D9E75',subscriptions:'#D4537E',other:'#888780'};
 const SCOPES='https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/calendar';
 const USERS={trevin:{name:'Trevin',email:'deustueurtrevin@gmail.com',color:'#1D9E75'},dulini:{name:'Dulini',email:'dulinimadushanki@gmail.com',color:'#D4537E'}};
-const PL={saving:'💚 Saving',investment:'📈 Investment',loan:'🔴 Loan',fd:'🔵 FD',fund:'🟡 Fund'};
-const PC={saving:'saving',investment:'investment',loan:'loan',fd:'fd',fund:'fund'};
+const PL={saving:'💚 Saving',investment:'📈 Investment',loan:'🔴 Loan',fd:'🔵 FD',fund:'🟡 Fund',earning:'📥 Earning',living:'🏠 Living',vehicle:'🚗 Vehicle',entertainment:'🎬 Entertainment'};
+const PC={saving:'saving',investment:'investment',loan:'loan',fd:'fd',fund:'fund',earning:'earning',living:'living',vehicle:'vehicle',entertainment:'entertainment'};
+function getPurposeLabel(p){if(!p)return '';return PL[p]||(p.charAt(0).toUpperCase()+p.slice(1));}
+function getPurposeClass(p){if(!p)return '';return PC[p]||'custom-tag';}
 
 // ════════════════════════════════════════════════════════════════
 // STATE
@@ -2328,7 +2335,7 @@ function buildItemRow(item){
   const days=getDaysUntil(item.dueDay);
   const dueBadge=item.dueDay?`<span class="due-badge ${days===0?'today':days!==null&&days<=(item.bufferDays||3)?'soon':''}" onclick="editDueDay('${item.id}')" title="Click to change">${days===0?'TODAY':days===null?'':days+'d'}</span>`:'<span class="due-badge" onclick="editDueDay(\''+item.id+'\')" title="Set due day">+day</span>';
   const purposeBadge=item.purpose?
-    `<span class="purpose-badge ${PC[item.purpose]||''}" onclick="cyclePurpose('${item.id}')" title="Click to change">${PL[item.purpose]||''}</span>`:
+    `<span class="purpose-badge ${getPurposeClass(item.purpose)}" onclick="cyclePurpose('${item.id}')" title="Click to change">${getPurposeLabel(item.purpose)}</span>`:
     `<span class="purpose-badge add" onclick="cyclePurpose('${item.id}')" title="Add purpose tag">+ tag</span>`;
   // sparkline for variable items
   const sparkHtml=item.tag==='variable'||item.tag==='discretionary'?buildSparkline(item):'';
@@ -2429,9 +2436,10 @@ function updateSlider(id,val){
 }
 
 function cyclePurpose(id){
-  const opts=['','saving','investment','loan','fd','fund'];
   const item=items.find(i=>i.id===id);if(!item)return;
-  item.purpose=opts[(opts.indexOf(item.purpose||'')+1)%opts.length];
+  const v=prompt('Purpose tag — any word (saving, loan, earning, living, vehicle, entertainment, or anything custom).\nLeave blank to remove.',item.purpose||'');
+  if(v===null)return;
+  item.purpose=v.trim().toLowerCase();
   recalc();
 }
 
@@ -2698,7 +2706,7 @@ function renderTracker(){
 }
 
 function buildTrackerRow(item,prefix,b,a,v,month,year,tkey){
-  const purposeHtml=item.purpose?`<span class="purpose-badge ${PC[item.purpose]||''}" style="font-size:9px;margin-left:3px;">${PL[item.purpose]||''}</span>`:'';
+  const purposeHtml=item.purpose?`<span class="purpose-badge ${getPurposeClass(item.purpose)}" style="font-size:9px;margin-left:3px;">${getPurposeLabel(item.purpose)}</span>`:'';
   const pillHtml=buildSurplusPill(prefix+'_'+item.id,v,month,year,item);
   const routeTag=getRoutedTag(tkey,prefix+'_'+item.id);
   return `<tr data-id="${item.id}" oncontextmenu="event.preventDefault();showTrackerContextMenu(event,'${item.id}','${prefix}')">
@@ -3159,7 +3167,17 @@ function openItemModal(editId){
     document.getElementById('item-val').value=item.val;
     document.getElementById('item-freq').value=item.freq;
     document.getElementById('item-owner').value=item.owner||'shared';
-    document.getElementById('item-purpose').value=item.purpose||'';
+    // Set purpose — if it's a custom tag not in the dropdown, add it temporarily
+    const purposeSel=document.getElementById('item-purpose');
+    const knownPurposes=['','saving','investment','loan','fd','fund','earning','living','vehicle','entertainment'];
+    if(item.purpose&&!knownPurposes.includes(item.purpose)){
+      // Add as option if not present
+      if(!Array.from(purposeSel.options).find(o=>o.value===item.purpose)){
+        const opt=document.createElement('option');opt.value=item.purpose;opt.textContent='🏷 '+item.purpose.charAt(0).toUpperCase()+item.purpose.slice(1);
+        purposeSel.insertBefore(opt,purposeSel.lastElementChild);
+      }
+    }
+    purposeSel.value=item.purpose||'';
     document.getElementById('item-dueday').value=item.dueDay||'';
     document.getElementById('item-buffer').value=item.bufferDays||'';
     document.getElementById('split-t').value=item.splitRatio?.trevin??50;
@@ -3228,6 +3246,8 @@ function saveItem(){
   const name=document.getElementById('item-name').value.trim();if(!name){alert('Enter a name.');return;}
   let cat=document.getElementById('item-cat').value;
   if(cat==='__new'){cat=prompt('New category name:')||'other';cat=cat.toLowerCase().trim();}
+  let purpose=document.getElementById('item-purpose').value;
+  if(purpose==='__custom'){purpose=prompt('Custom purpose tag (any word):')||'';purpose=purpose.trim().toLowerCase();}
   const oldItem=editItemId?items.find(i=>i.id===editItemId):null;
   const item={
     id:editItemId||uid(),type:itemModalType,name,
@@ -3235,7 +3255,7 @@ function saveItem(){
     freq:document.getElementById('item-freq').value,
     cat:itemModalType==='expense'?cat:'',
     tag:itemModalType==='expense'?document.getElementById('item-tag').value:'fixed',
-    purpose:document.getElementById('item-purpose').value,
+    purpose,
     owner:document.getElementById('item-owner').value,
     on:document.getElementById('item-active').checked,
     dueDay:+document.getElementById('item-dueday').value||0,
@@ -3258,7 +3278,6 @@ function deleteCurrentItem(){
 }
 function renderGlobalTable(){
   const tbody=document.getElementById('global-tbody');
-  const purposeOptions=['','saving','investment','loan','fd','fund'];
   tbody.innerHTML=items.map(item=>`<tr>
     <td><input type="checkbox" ${item.on?'checked':''} style="accent-color:var(--accent);" onchange="globalToggle('${item.id}',this.checked)"></td>
     <td><input value="${item.name}" onchange="globalEdit('${item.id}','name',this.value)" style="min-width:80px;"></td>
@@ -3266,7 +3285,7 @@ function renderGlobalTable(){
     <td><select onchange="globalEdit('${item.id}','freq',this.value)">${['daily','weekly','monthly','annual'].map(f=>`<option value="${f}"${item.freq===f?' selected':''}>${f}</option>`).join('')}</select></td>
     <td><div class="owner-dot ${item.owner||'shared'}" style="display:inline-block;" onclick="globalCycleOwner('${item.id}')"></div></td>
     <td><span class="tag-badge ${item.tag==='fixed'?'tag-fixed':item.tag==='variable'?'tag-variable':'tag-discretionary'}">${item.tag||'—'}</span></td>
-    <td><select style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);" onchange="globalEdit('${item.id}','purpose',this.value)">${purposeOptions.map(p=>`<option value="${p}"${item.purpose===p?' selected':''}>${p||'—'}</option>`).join('')}</select></td>
+    <td><input type="text" value="${item.purpose||''}" placeholder="any tag" onchange="globalEdit('${item.id}','purpose',this.value.trim().toLowerCase())" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);font-size:10px;font-family:inherit;"></td>
     <td><input type="number" value="${item.dueDay||''}" placeholder="—" onchange="globalEdit('${item.id}','dueDay',+this.value||0)" style="width:40px;"></td>
     <td><input type="number" value="${item.splitRatio?.trevin??50}" onchange="globalEditSplit('${item.id}',+this.value)" style="width:40px;" min="0" max="100"></td>
     <td><button class="btn btn-sm btn-danger" onclick="globalDelete('${item.id}')" style="padding:1px 5px;"><i class="ti ti-trash" style="font-size:10px;"></i></button></td>
