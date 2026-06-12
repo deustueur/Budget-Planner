@@ -304,7 +304,7 @@ window.lsSave = function() {
       isDarkTheme:       typeof isDarkTheme       !== 'undefined' ? isDarkTheme       : false,
       activeProfile:     typeof activeProfile     !== 'undefined' ? activeProfile     : 'trevin',
       connections:       typeof connections       !== 'undefined' ? connections.map(c=>({...c,active:false})) : [],
-      _v: 6, _ts: Date.now()
+      _v: 7, _ts: Date.now()
     }));
   } catch(e) { console.warn('lsSave failed:', e); }
 };
@@ -314,7 +314,7 @@ window.lsLoad = function() {
     const raw = localStorage.getItem('bp_state_v7');
     if (!raw) return false;
     const s = JSON.parse(raw);
-    if (!s || (s._v !== 6 && s._v !== 7)) return false;
+    if (!s || s._v !== 7) return false;
 
     if (Array.isArray(s.items) && s.items.length)
       items = s.items.map(i => ({ ...i, history: i.history || [], calEventId: i.calEventId || null }));
@@ -495,14 +495,17 @@ if (typeof window.handleMasterUpload === 'function') {
   window.handleMasterUpload = function(event) {
     _origHMU(event); // Run the standard upload and memory replacement
     
-    // Wait 2.1 seconds for the original upload's UI closing animation to finish, then prompt
+    // After upload, offer sheet rebuild via non-blocking toast (no confirm = no layout break)
     setTimeout(() => {
       if (typeof accessToken !== 'undefined' && accessToken) {
-        if (confirm('Site updated from master file.\n\nOverwrite the Google Sheet to match the site now?\n\nThis fully rebuilds the sheet with formulas.')) {
-          window.executeFullSheetRebuild();
-        }
+        const banner = document.createElement('div');
+        banner.id = 'sheet-rebuild-banner';
+        banner.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;background:var(--surface);border:1px solid var(--warning);border-radius:12px;padding:14px 18px;box-shadow:0 4px 20px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;font-size:13px;max-width:360px;';
+        banner.innerHTML = '<i class="ti ti-table-export" style="color:var(--warning);font-size:18px;flex-shrink:0;"></i><div style="flex:1;">Site updated from master.<br><span style=\'font-size:11px;color:var(--text2);\'>Push changes to Google Sheet now?</span></div><button onclick=\'window.executeFullSheetRebuild();document.getElementById(\"sheet-rebuild-banner\").remove();\'  class="btn btn-sm btn-accent" style="flex-shrink:0;">Rebuild Sheet</button><button onclick=\'document.getElementById(\"sheet-rebuild-banner\").remove();\'  class="btn btn-sm" style="flex-shrink:0;">Skip</button>';
+        document.body.appendChild(banner);
+        setTimeout(() => { const b = document.getElementById('sheet-rebuild-banner'); if(b) b.remove(); }, 15000);
       }
-    }, 2100); 
+    }, 2100);
   };
 }
 
@@ -1528,7 +1531,7 @@ window.openDriveMasterPicker = async function() {
 window.addEventListener('load', () => {
   setTimeout(() => {
     // Inject the Restore button directly into the top sync bar next to your Save/Connect buttons
-    const syncActions = document.querySelector('.header-actions') || document.getElementById('sync-bar') || document.body;
+    const syncActions = document.querySelector('.sync-bar') || document.body;
     if (syncActions && !document.getElementById('btn-cloud-restore')) {
       const restoreBtn = document.createElement('button');
       restoreBtn.id = 'btn-cloud-restore';
@@ -1622,7 +1625,7 @@ window.saveIndefiniteSnapshot = async function(fileName) {
 // ══════════════════════════════════════════════════════════════
 window.addEventListener('load', () => {
   setTimeout(() => {
-    const syncActions = document.querySelector('.header-actions') || document.getElementById('sync-bar') || document.body;
+    const syncActions = document.querySelector('.sync-bar') || document.body;
     if (syncActions && !document.getElementById('btn-cloud-restore')) {
       const restoreBtn = document.createElement('button');
       restoreBtn.id = 'btn-cloud-restore';
@@ -1957,9 +1960,7 @@ window.handleMasterUpload = function(event) {
       // PHASE 5: HARD SAVE TO CACHE & REBOOT
       window.lsSave();
       
-      if (confirm('Master Site Database loaded successfully.\n\nAll existing data was wiped and rebuilt strictly from the Excel file. The site will now refresh.')) {
-        location.reload();
-      }
+      location.reload();
 
     } catch(err) {
       if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Database Restore Failed');
@@ -2095,9 +2096,8 @@ window.handleMasterUpload = async function(event) {
       }
 
       // 6. KILL AND RESTART
-      if (confirm('HARD OVERWRITE COMPLETE.\n\nThe database has been forcibly replaced with your Excel file.\nThe site will now restart to load your new data.')) {
-        location.reload();
-      }
+      // Auto-reload without confirm to avoid layout disruption
+      location.reload();
 
     } catch(err) {
       if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Hard Overwrite Failed');
@@ -2221,9 +2221,8 @@ window.handleMasterUpload = async function(event) {
       window.items = []; window.trackerData = {}; window.monthHistory = {};
 
       // 7. RESTART
-      if (confirm('HARD OVERWRITE COMPLETE.\n\nThe database has been forcibly replaced with your Excel file.\nThe site will now restart to load your new data.')) {
-        location.reload();
-      }
+      // Auto-reload without confirm to avoid layout disruption
+      location.reload();
 
     } catch(err) {
       if (typeof setSyncStatus === 'function') setSyncStatus('error', 'Hard Overwrite Failed');
