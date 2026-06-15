@@ -11,8 +11,6 @@ const GRID_ROW_H = 80;
 const LS_LAYOUT  = 'bp_layout_v4';
 
 // ── Island definitions using REAL element IDs from index.html ──
-// For dynamic containers (suggestions-list etc), the island wraps
-// the static parent div that always exists in the DOM at load time.
 const TAB_ISLANDS = {
   dashboard: [
     { id:'dash-metrics',       label:'Metrics',         col:1,  row:1,  w:24, h:2 },
@@ -62,6 +60,7 @@ const TAB_ISLANDS = {
     { id:'ins-templates',      label:'Templates',       col:1,  row:25, w:24, h:3 },
   ],
 };
+  
 // ═══════════════════════════════════════════════════════════════
 // 1. STYLES
 // ═══════════════════════════════════════════════════════════════
@@ -562,17 +561,28 @@ window.resetLayout = resetLayout;
 // 7. GOD BAR + BUTTON
 // ═══════════════════════════════════════════════════════════════
 function injectGodUI() {
+  // Prevent duplicate injection
   if (document.getElementById('gm-btn')) return;
+  
+  // Find the exact container
   const navRight = document.querySelector('.nav-right');
-  if (!navRight) return;
+  if (!navRight) {
+    console.warn('[patch v5] Could not find .nav-right to inject God Mode button. Retrying in 500ms...');
+    setTimeout(injectGodUI, 500); // Retry if DOM isn't ready
+    return;
+  }
 
+  // Create Button
   const btn = document.createElement('button');
   btn.id = 'gm-btn';
   btn.className = 'god-btn';
   btn.innerHTML = '<i class="ti ti-adjustments"></i> Configure';
   btn.onclick = toggleGodMode;
+  
+  // Insert before the profile toggle or at the start
   navRight.insertBefore(btn, navRight.firstChild);
 
+  // Create Floating Bar
   const bar = document.createElement('div');
   bar.id = 'gm-bar';
   bar.innerHTML = `
@@ -589,7 +599,7 @@ function injectGodUI() {
     </button>`;
   document.body.appendChild(bar);
 }
-
+  
 // ═══════════════════════════════════════════════════════════════
 // 8. CASH FLOW CALENDAR
 // ═══════════════════════════════════════════════════════════════
