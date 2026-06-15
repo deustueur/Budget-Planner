@@ -1,6 +1,3 @@
-bash
-
-cat > /home/claude/patch_fixed.js << 'PATCHEOF'
 // ═══════════════════════════════════════════════════════════════════
 // BUDGET PLANNER — PATCH v4
 // God mode (all tabs), cash flow calendar, history bank delete
