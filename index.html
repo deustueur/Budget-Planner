@@ -375,7 +375,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <span style="font-size:11px;color:var(--text2);">View all <i class="ti ti-chevron-right" style="font-size:10px;"></i></span>
   </div>
   <div class="metrics" id="dash-metrics"></div>
-  <div class="bbar-card">
+  <div class="bbar-card" id="dash-bar">
     <div class="bar-row"><span>Expenses vs income</span><span id="bar-pct-label">0%</span></div>
     <div class="bar-track"><div class="bar-fill" id="bar-fill" style="width:0%;"></div></div>
   </div>
@@ -390,7 +390,7 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
     <div id="dash-savings-items" style="margin-bottom:10px;"></div>
     <div id="dash-streams-mini" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;"></div>
   </div>
-  <div class="two-col">
+  <div id="dash-income-expense-row" class="two-col">
     <div class="card" id="income-card">
       <div class="card-head"><span class="card-title">Income</span><span id="income-total-label" style="font-size:12px;font-weight:700;color:var(--accent);"></span></div>
       <div id="income-rows"></div>
@@ -400,12 +400,12 @@ input.actual:focus{outline:none;border-color:var(--accent);background:var(--surf
       <div id="expense-rows"></div>
     </div>
   </div>
-  <div class="two-col">
-    <div class="chart-card">
+  <div id="dash-chart-global-row" class="two-col">
+    <div class="chart-card" id="dash-cat-chart">
       <div class="chart-head"><span class="chart-title">Spending by category</span></div>
       <div style="height:180px;"><canvas id="catChart"></canvas></div>
     </div>
-    <div class="card">
+    <div class="card" id="dash-global">
       <div class="card-head"><span class="card-title">All items — global view</span><button class="btn btn-sm btn-ghost" onclick="renderGlobalTable()"><i class="ti ti-refresh" style="font-size:11px;"></i></button></div>
       <div class="global-table-wrap"><table class="global-table">
         <thead><tr><th>Name</th><th>Type</th><th>Amount</th><th>Cat</th><th>Tag</th><th>Purpose</th><th>Owner</th><th>On</th></tr></thead>
@@ -2504,5 +2504,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   init();
 });
 </script>
+<script src="patch.js"></script>
 </body>
 </html>
