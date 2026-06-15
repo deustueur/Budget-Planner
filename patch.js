@@ -22,9 +22,10 @@ const TAB_ISLANDS = {
     { id:'dash-global',        label:'All items',       col:13, row:14, w:12, h:4 },
   ],
   cashflow: [
-    { id:'cf-calendar-card',   label:'Cash flow',       col:1,  row:1,  w:24, h:8 },
-    { id:'cf-due-card',        label:'Due soon',        col:1,  row:9,  w:12, h:4 },
-    { id:'cf-tax-card',        label:'Tax estimator',   col:13, row:9,  w:12, h:4 },
+    { id:'cf-calendar-card',   label:'Calendar',        col:1,  row:1,  w:24, h:8 },
+    { id:'cf-timeline-card',   label:'Timeline',        col:1,  row:9,  w:24, h:4 },
+    { id:'cf-due-card',        label:'Due soon',        col:1,  row:13, w:12, h:4 },
+    { id:'cf-tax-card',        label:'Tax estimator',   col:13, row:13, w:12, h:4 },
   ],
   tracker: [
     { id:'tracker-card',       label:'Tracker',         col:1,  row:1,  w:24, h:12 },
@@ -205,11 +206,18 @@ function addStaticIds() {
   if (eCard && !eCard.id) eCard.id = 'events-card';
 
   // ── Cashflow ──
+  // Hunt down the original timeline card using its inner track element
+  const timelineTrack = document.getElementById('cf-track');
+  if (timelineTrack) {
+    const timelineCard = timelineTrack.closest('.card');
+    if (timelineCard && !timelineCard.id) timelineCard.id = 'cf-timeline-card';
+  }
+  
   const cfTwoCols = document.querySelectorAll('#tab-cashflow .two-col .card');
   if (cfTwoCols[0]) cfTwoCols[0].id = 'cf-due-card';
   if (cfTwoCols[1]) cfTwoCols[1].id = 'cf-tax-card';
   const oldBottomRow = document.getElementById('cf-bottom-row');
-  if (oldBottomRow) oldBottomRow.id = ''; 
+  if (oldBottomRow) oldBottomRow.id = ''; // Disband the chunk wrapper
 
   // ── Savings Metrics ──
   const savCards = document.querySelectorAll('#savings-metrics .metric-card');
