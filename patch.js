@@ -814,76 +814,72 @@ function patchShowTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 9. HISTORY BANK DELETE
+// 9. HISTORY GRID DELETE (Fixed Placement)
 // ═══════════════════════════════════════════════════════════════
 function patchBank() {
   if (window._gmBank) return;
-  const origRHB = window.renderHistoryBank;
+  const origRHG = window.renderHistoryGrid;
   const origRI  = window.renderInsights;
-  if (!origRHB) return;
+  if (!origRHG) return;
   window._gmBank = true;
 
   function addX() {
-    const list = document.getElementById('history-bank-list');
-    if (!list) return;
+    // Target the Grid Cards on the LEFT, not the Bank List on the right
+    const grid = document.getElementById('history-grid');
+    if (!grid) return;
     
-    list.querySelectorAll('.history-bank-item').forEach(item => {
-      if (item.querySelector('.bx')) return; // Already has the X
+    grid.querySelectorAll('.history-card').forEach(card => {
+      if (card.querySelector('.bx')) return; // Already has the X
       
       let key = null;
+      // Extract the key directly from the card's onclick attribute
+      const onclickAttr = card.getAttribute('onclick') || '';
+      const m = onclickAttr.match(/loadHistoryDetail\('([^']+)'/);
+      if (m) key = m[1];
       
-      // Method 1: Look for conflict button
-      const resolveBtn = item.querySelector('button[onclick*="openConflictModal"]');
-      if (resolveBtn) {
-        const m = resolveBtn.getAttribute('onclick').match(/openConflictModal\('([^']+)'\)/);
-        if (m) key = m[1];
-      }
-      
-      // Method 2: Broader text search to find the month key
-      if (!key && typeof insightHistory !== 'undefined') {
-        // Look at all spans to find a matching date string
-        const spans = item.querySelectorAll('span');
-        const msNames = typeof MS !== 'undefined' ? MS : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        
-        spans.forEach(span => {
-          const txt = span.textContent.trim();
-          const foundKey = Object.keys(insightHistory).find(k => {
-            const [y,mi] = k.split('-');
-            return txt.includes(msNames[+mi] + ' ' + y);
-          });
-          if (foundKey) key = foundKey;
-        });
-      }
-      
-      // If it still can't find a key, don't add a broken button
       if (!key) return; 
 
       const btn = document.createElement('button');
       btn.className = 'bx';
       btn.title = 'Delete this month';
       btn.innerHTML = '✕';
-      btn.onclick = ev => { ev.stopPropagation(); delBank(key); };
-      item.appendChild(btn);
+      
+      // Position the X neatly in the top-right corner of the card
+      btn.style.position = 'absolute';
+      btn.style.top = '-6px';
+      btn.style.right = '-6px';
+      btn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+      
+      btn.onclick = ev => { 
+        ev.stopPropagation(); // Stop the card from opening when clicking X
+        delBank(key); 
+      };
+      
+      card.appendChild(btn);
     });
   }
 
-  // INCREASED TIMEOUT: Gives the browser time to finish drawing the list first
-  window.renderHistoryBank = function() { origRHB(); setTimeout(addX, 150); };
+  window.renderHistoryGrid = function() { origRHG(); setTimeout(addX, 150); };
   if (origRI) window.renderInsights = function() { origRI(); setTimeout(addX, 150); };
 }
 
 function delBank(key) {
   const [y,mi] = key.split('-');
-  const MS = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  if (!confirm(`Delete ${MS[+mi]} ${y} from History Bank?\n\nRemoves tracker actuals, history snapshot and bank entry. Cannot be undone.`)) return;
-  if (window.insightHistory)   delete window.insightHistory[key];
-  if (window.pendingConflicts) delete window.pendingConflicts[key];
-  if (window.trackerData)      delete window.trackerData[key];
-  if (window.monthHistory)     delete window.monthHistory[key];
-  if (window.monthNotes)       delete window.monthNotes[key];
-  if (typeof window.markDirty === 'function') window.markDirty();
-  if (typeof window.renderInsights === 'function') window.renderInsights();
-  if (typeof window.buildNotifications === 'function') window.buildNotifications();
+  const msNames = typeof MS !== 'undefined' ? MS : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  
+  if (!confirm(`Delete ${msNames[+mi]} ${y} from History?\n\nRemoves tracker actuals, history snapshot, and bank entry. Cannot be undone.`)) return;
+  
+  // This purges the file and its data completely
+  if (typeof insightHistory !== 'undefined')   delete insightHistory[key];
+  if (typeof pendingConflicts !== 'undefined') delete pendingConflicts[key];
+  if (typeof trackerData !== 'undefined')      delete trackerData[key];
+  if (typeof monthHistory !== 'undefined')     delete monthHistory[key];
+  if (typeof monthNotes !== 'undefined')       delete monthNotes[key];
+  
+  if (typeof markDirty === 'function') markDirty();
+  if (typeof renderInsights === 'function') renderInsights();
+  if (typeof buildNotifications === 'function') buildNotifications();
+  if (typeof renderTracker === 'function') renderTracker();
 }
 
 // ═══════════════════════════════════════════════════════════════
