@@ -21,7 +21,7 @@ const TAB_ISLANDS = {
     { id:'dash-cat-chart',     label:'Category chart',  col:1,  row:14, w:12, h:4 },
     { id:'dash-global',        label:'All items',       col:13, row:14, w:12, h:4 },
   ],
-  cashflow: [
+cashflow: [
     { id:'cf-calendar-card',   label:'Calendar',        col:1,  row:1,  w:24, h:8 },
     { id:'cf-timeline-card',   label:'Timeline',        col:1,  row:9,  w:24, h:4 },
     { id:'cf-due-card',        label:'Due soon',        col:1,  row:13, w:12, h:4 },
