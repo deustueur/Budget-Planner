@@ -826,26 +826,38 @@ function patchBank() {
   function addX() {
     const list = document.getElementById('history-bank-list');
     if (!list) return;
+    
     list.querySelectorAll('.history-bank-item').forEach(item => {
-      if (item.querySelector('.bx')) return;
+      if (item.querySelector('.bx')) return; // Already has the X
+      
       let key = null;
+      
+      // Method 1: Look for conflict button
       const resolveBtn = item.querySelector('button[onclick*="openConflictModal"]');
       if (resolveBtn) {
         const m = resolveBtn.getAttribute('onclick').match(/openConflictModal\('([^']+)'\)/);
         if (m) key = m[1];
       }
-      if (!key && window.insightHistory) {
-        const span = item.querySelector('span[style*="font-weight"]');
-        if (span) {
+      
+      // Method 2: Broader text search to find the month key
+      if (!key && typeof insightHistory !== 'undefined') {
+        // Look at all spans to find a matching date string
+        const spans = item.querySelectorAll('span');
+        const msNames = typeof MS !== 'undefined' ? MS : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        
+        spans.forEach(span => {
           const txt = span.textContent.trim();
-          const MS  = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          key = Object.keys(window.insightHistory).find(k => {
+          const foundKey = Object.keys(insightHistory).find(k => {
             const [y,mi] = k.split('-');
-            return (MS[+mi] + ' ' + y) === txt;
+            return txt.includes(msNames[+mi] + ' ' + y);
           });
-        }
+          if (foundKey) key = foundKey;
+        });
       }
-      if (!key) return;
+      
+      // If it still can't find a key, don't add a broken button
+      if (!key) return; 
+
       const btn = document.createElement('button');
       btn.className = 'bx';
       btn.title = 'Delete this month';
@@ -855,8 +867,9 @@ function patchBank() {
     });
   }
 
-  window.renderHistoryBank = function() { origRHB(); setTimeout(addX, 40); };
-  if (origRI) window.renderInsights = function() { origRI(); setTimeout(addX, 80); };
+  // INCREASED TIMEOUT: Gives the browser time to finish drawing the list first
+  window.renderHistoryBank = function() { origRHB(); setTimeout(addX, 150); };
+  if (origRI) window.renderInsights = function() { origRI(); setTimeout(addX, 150); };
 }
 
 function delBank(key) {
