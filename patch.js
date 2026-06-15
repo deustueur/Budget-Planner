@@ -25,7 +25,8 @@ const TAB_ISLANDS = {
   ],
   cashflow: [
     { id:'cf-calendar-card',   label:'Cash flow',       col:1,  row:1,  w:24, h:8 },
-    { id:'cf-bottom-row',      label:'Due / Tax',       col:1,  row:9,  w:24, h:4 },
+    { id:'cf-due-card',        label:'Due soon',        col:1,  row:9,  w:12, h:4 },
+    { id:'cf-tax-card',        label:'Tax estimator',   col:13, row:9,  w:12, h:4 },
   ],
   tracker: [
     { id:'tracker-card',       label:'Tracker',         col:1,  row:1,  w:24, h:12 },
@@ -34,33 +35,33 @@ const TAB_ISLANDS = {
     { id:'events-card',        label:'Events',          col:1,  row:1,  w:24, h:10 },
   ],
   savings: [
-    { id:'savings-metrics',    label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'sav-met-total',      label:'Total Saved',     col:1,  row:1,  w:6,  h:2 },
+    { id:'sav-met-trevin',     label:'Trevin',          col:7,  row:1,  w:6,  h:2 },
+    { id:'sav-met-dulini',     label:'Dulini',          col:13, row:1,  w:6,  h:2 },
+    { id:'sav-met-active',     label:'Active Streams',  col:19, row:1,  w:6,  h:2 },
     { id:'settlement-panel',   label:'Settlement',      col:1,  row:3,  w:12, h:3 },
     { id:'savings-projections',label:'Projections',     col:13, row:3,  w:12, h:3 },
     { id:'savings-grid',       label:'Streams',         col:1,  row:6,  w:24, h:6 },
   ],
   instruments: [
-    { id:'instr-metrics',      label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'ins-met-total',      label:'Total Instr.',    col:1,  row:1,  w:8,  h:2 },
+    { id:'ins-met-debt',       label:'Total Debt',      col:9,  row:1,  w:8,  h:2 },
+    { id:'ins-met-invest',     label:'Invested/Saved',  col:17, row:1,  w:8,  h:2 },
     { id:'instruments-grid',   label:'Instruments',     col:1,  row:3,  w:24, h:9 },
   ],
   insights: [
-    // These wrap the static containers that ALWAYS exist in the HTML
     { id:'ins-networth',       label:'Net worth',       col:1,  row:1,  w:24, h:3 },
     { id:'ins-history',        label:'History',         col:1,  row:4,  w:14, h:5 },
     { id:'ins-bank',           label:'History bank',    col:15, row:4,  w:10, h:5 },
     { id:'ins-import',         label:'Import',          col:1,  row:9,  w:14, h:6 },
     { id:'ins-suggestions',    label:'Suggestions',     col:15, row:9,  w:10, h:3 },
     { id:'ins-velocity',       label:'Velocity',        col:15, row:12, w:10, h:3 },
-    { id:'ins-charts',         label:'Trends',          col:1,  row:15, w:24, h:5 },
-    { id:'ins-templates',      label:'Templates',       col:1,  row:20, w:24, h:3 },
+    { id:'ins-chart-trevin-w', label:'Trevin Trend',    col:1,  row:15, w:12, h:5 },
+    { id:'ins-chart-dulini',   label:'Dulini Trend',    col:13, row:15, w:12, h:5 },
+    { id:'ins-chart-combined', label:'Combined Trend',  col:1,  row:20, w:24, h:5 },
+    { id:'ins-templates',      label:'Templates',       col:1,  row:25, w:24, h:3 },
   ],
 };
-
-let godMode      = false;
-let layoutConfig = {};
-let dragState    = null;
-let resizeState  = null;
-
 // ═══════════════════════════════════════════════════════════════
 // 1. STYLES
 // ═══════════════════════════════════════════════════════════════
@@ -181,79 +182,66 @@ body.gm-on .gm-wrap:hover .gm-lbl{display:block;}
 
 // ═══════════════════════════════════════════════════════════════
 // 2. ADD STATIC IDs TO ELEMENTS THAT NEED THEM
-//    Only wraps elements that ALWAYS exist in the DOM at load time
 // ═══════════════════════════════════════════════════════════════
 function addStaticIds() {
   // ── Dashboard ──
   const bbar = document.querySelector('#tab-dashboard .bbar-card');
   if (bbar && !bbar.id) bbar.id = 'dash-bar';
-
   const catChart = document.querySelector('#tab-dashboard .chart-card');
   if (catChart && !catChart.id) catChart.id = 'dash-cat-chart';
-
-  // dash-global: the card next to cat chart
   const twoColCards = document.querySelectorAll('#tab-dashboard .two-col .card');
   twoColCards.forEach(c => {
     if (!c.id && c.querySelector('#global-tbody')) c.id = 'dash-global';
   });
 
-  // ── Tracker ──
+  // ── Tracker & Events ──
   const tCard = document.querySelector('#tab-tracker > .card');
   if (tCard && !tCard.id) tCard.id = 'tracker-card';
-
-  // ── Events ──
   const eCard = document.querySelector('#tab-events > .card');
   if (eCard && !eCard.id) eCard.id = 'events-card';
 
   // ── Cashflow ──
-  // Build the calendar card (replaces old timeline card)
-  buildCalendarCard();
+  const cfTwoCols = document.querySelectorAll('#tab-cashflow .two-col .card');
+  if (cfTwoCols[0]) cfTwoCols[0].id = 'cf-due-card';
+  if (cfTwoCols[1]) cfTwoCols[1].id = 'cf-tax-card';
+  const oldBottomRow = document.getElementById('cf-bottom-row');
+  if (oldBottomRow) oldBottomRow.id = ''; // Disband the chunk wrapper
 
-  // ── Insights: wrap static container elements ──
-  // These divs all exist in static HTML - we just give their parents IDs
+  // ── Savings Metrics (Initial Tagging) ──
+  const savCards = document.querySelectorAll('#savings-metrics .metric-card');
+  if (savCards[0]) savCards[0].id = 'sav-met-total';
+  if (savCards[1]) savCards[1].id = 'sav-met-trevin';
+  if (savCards[2]) savCards[2].id = 'sav-met-dulini';
+  if (savCards[3]) savCards[3].id = 'sav-met-active';
+
+  // ── Instruments Metrics (Initial Tagging) ──
+  const insCards = document.querySelectorAll('#instr-metrics .metric-card');
+  if (insCards[0]) insCards[0].id = 'ins-met-total';
+  if (insCards[1]) insCards[1].id = 'ins-met-debt';
+  if (insCards[2]) insCards[2].id = 'ins-met-invest';
+
+  // ── Insights ──
   wrapEl('ins-networth',    document.querySelector('#tab-insights .networth-card'));
-  wrapEl('ins-history',     buildInsBlock([
-    document.querySelector('#tab-insights .insight-section-title'),
-    document.getElementById('history-grid'),
-    document.getElementById('history-detail'),
-  ]));
-  wrapEl('ins-bank',        buildInsBlock([
-    nthInsTitle(1),
-    document.getElementById('history-bank-list'),
-  ]));
-  wrapEl('ins-import',      buildInsBlock([
-    nthInsTitle(2),
-    document.querySelector('#tab-insights [style*="display:flex"][style*="gap:8px"]'),
-    document.getElementById('import-panel-local'),
-    document.getElementById('import-panel-drive'),
-  ]));
-  wrapEl('ins-suggestions', buildInsBlock([
-    nthInsTitle(3),
-    document.getElementById('suggestions-list'),
-  ]));
-  wrapEl('ins-velocity',    buildInsBlock([
-    nthInsTitle(4),
-    document.getElementById('savings-velocity'),
-  ]));
-  wrapEl('ins-charts',      buildInsBlock([
-    nthInsTitle(5),
-    document.querySelector('#tab-insights .two-col'),
-    document.querySelector('#tab-insights .chart-card:last-of-type'),
-  ]));
-  wrapEl('ins-templates',   buildInsBlock([
-    nthInsTitle(6),
-    document.getElementById('templates-list'),
-    document.querySelector('#tab-insights button[onclick*="saveTemplate"]'),
-  ]));
+  wrapEl('ins-history',     buildInsBlock([nthInsTitle(0), document.getElementById('history-grid'), document.getElementById('history-detail')]));
+  wrapEl('ins-bank',        buildInsBlock([nthInsTitle(1), document.getElementById('history-bank-list')]));
+  wrapEl('ins-import',      buildInsBlock([nthInsTitle(2), document.querySelector('#tab-insights [style*="display:flex"][style*="gap:8px"]'), document.getElementById('import-panel-local'), document.getElementById('import-panel-drive')]));
+  wrapEl('ins-suggestions', buildInsBlock([nthInsTitle(3), document.getElementById('suggestions-list')]));
+  wrapEl('ins-velocity',    buildInsBlock([nthInsTitle(4), document.getElementById('savings-velocity')]));
+
+  // Split Charts
+  const tc = document.querySelector('#tab-insights .two-col');
+  if (tc) {
+    const cc = tc.querySelectorAll('.chart-card');
+    if (cc[0]) { cc[0].id = 'ins-chart-trevin'; wrapEl('ins-chart-trevin-w', buildInsBlock([nthInsTitle(5), cc[0]])); }
+    if (cc[1]) { cc[1].id = 'ins-chart-dulini'; }
+  }
+  const comb = document.querySelector('#tab-insights .chart-card:not(#ins-chart-trevin):not(#ins-chart-dulini)');
+  if (comb) comb.id = 'ins-chart-combined';
+
+  wrapEl('ins-templates',   buildInsBlock([nthInsTitle(6), document.getElementById('templates-list'), document.querySelector('#tab-insights button[onclick*="saveTemplate"]')]));
 }
 
-// Wrap a single element with an id
-function wrapEl(id, el) {
-  if (!el || document.getElementById(id)) return;
-  el.id = id;
-}
-
-// Group multiple elements under a new wrapper div
+function wrapEl(id, el) { if (!el || document.getElementById(id)) return; el.id = id; }
 function buildInsBlock(els) {
   const valid = els.filter(Boolean);
   if (!valid.length) return null;
@@ -263,11 +251,42 @@ function buildInsBlock(els) {
   valid.forEach(el => wrap.appendChild(el));
   return wrap;
 }
+function nthInsTitle(n) { return document.querySelectorAll('#tab-insights .insight-section-title')[n] || null; }
 
-// Get nth .insight-section-title in the insights tab
-function nthInsTitle(n) {
-  const titles = document.querySelectorAll('#tab-insights .insight-section-title');
-  return titles[n] || null;
+// ═══════════════════════════════════════════════════════════════
+// 2.5. SAFE RENDER PATCHES (Protects God Mode wrappers on redraw)
+// ═══════════════════════════════════════════════════════════════
+function patchMetricsRender() {
+  if (window._gmMetricsPatched) return;
+  window._gmMetricsPatched = true;
+
+  function restoreIsland(wrapId, rawCard, tabId) {
+    let wrap = document.querySelector(`.gm-wrap[data-id="${wrapId}"]`);
+    if (wrap) {
+      Array.from(wrap.children).forEach(c => {
+        if (!c.classList.contains('gm-handle') && !c.classList.contains('gm-grip') && !c.classList.contains('gm-lbl')) c.remove();
+      });
+      wrap.appendChild(rawCard);
+    } else if (document.getElementById('gm-grid-' + tabId)) {
+      document.getElementById('gm-grid-' + tabId).appendChild(rawCard);
+    }
+  }
+
+  const origRS = window.renderSavings;
+  window.renderSavings = function() {
+    origRS();
+    const cards = document.querySelectorAll('#savings-metrics .metric-card');
+    const ids = ['sav-met-total', 'sav-met-trevin', 'sav-met-dulini', 'sav-met-active'];
+    cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'savings'); } });
+  };
+
+  const origRI = window.renderInstruments;
+  window.renderInstruments = function() {
+    origRI();
+    const cards = document.querySelectorAll('#instr-metrics .metric-card');
+    const ids = ['ins-met-total', 'ins-met-debt', 'ins-met-invest'];
+    cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'instruments'); } });
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -818,14 +837,15 @@ function patchState() {
 function patchInit() {
   injectStyles();
   loadLayout();
-  addStaticIds();
-  buildTabGrids();
+  buildCalendarCard(); // Build calendar BEFORE tagging IDs
+  addStaticIds();      // Tag the split islands
+  patchMetricsRender();// Lock the metric wrappers from being nuked
+  buildTabGrids();     // Wrap everything in God Mode logic
   injectGodUI();
-  buildCalendarCard();
   patchBank();
   patchShowTab();
   patchState();
-  console.log('[patch v4] ✓ loaded');
+  console.log('[patch v4.1] ✓ loaded with granular splits');
 }
 
 // Wait for main site DOMContentLoaded to finish, then run
