@@ -1,563 +1,422 @@
+bash
+
+cat > /home/claude/patch_fixed.js << 'PATCHEOF'
 // ═══════════════════════════════════════════════════════════════════
-// BUDGET PLANNER — PATCH v3
-// Fixes: God mode (all tabs), cash flow calendar, history bank delete
+// BUDGET PLANNER — PATCH v4
+// God mode (all tabs), cash flow calendar, history bank delete
 // ═══════════════════════════════════════════════════════════════════
 (function () {
 'use strict';
 
 // ─── CONFIG ─────────────────────────────────────────────────────
-const GRID_COLS    = 24;
-const GRID_ROW_H   = 80;   // px per row unit
-const LS_LAYOUT    = 'bp_layout_v3';
+const GRID_COLS  = 24;
+const GRID_ROW_H = 80;
+const LS_LAYOUT  = 'bp_layout_v4';
 
-// Map of real element IDs that exist in the HTML per tab
-// These are the actual draggable islands
+// ── Island definitions using REAL element IDs from index.html ──
+// For dynamic containers (suggestions-list etc), the island wraps
+// the static parent div that always exists in the DOM at load time.
 const TAB_ISLANDS = {
   dashboard: [
-    { id:'dash-metrics',        label:'Metrics',         col:1,  row:1,  w:24, h:2 },
-    { id:'dash-bar',            label:'Budget bar',      col:1,  row:3,  w:24, h:1 },
-    { id:'dash-savings-panel',  label:'Tagged savings',  col:1,  row:4,  w:24, h:3 },
-    { id:'income-card',         label:'Income',          col:1,  row:7,  w:12, h:7 },
-    { id:'expense-card',        label:'Expenses',        col:13, row:7,  w:12, h:7 },
-    { id:'dash-cat-chart',      label:'Category chart',  col:1,  row:14, w:12, h:4 },
-    { id:'dash-global',         label:'All items',       col:13, row:14, w:12, h:4 },
+    { id:'dash-metrics',       label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'dash-bar',           label:'Budget bar',      col:1,  row:3,  w:24, h:1 },
+    { id:'dash-savings-panel', label:'Tagged savings',  col:1,  row:4,  w:24, h:3 },
+    { id:'income-card',        label:'Income',          col:1,  row:7,  w:12, h:7 },
+    { id:'expense-card',       label:'Expenses',        col:13, row:7,  w:12, h:7 },
+    { id:'dash-cat-chart',     label:'Category chart',  col:1,  row:14, w:12, h:4 },
+    { id:'dash-global',        label:'All items',       col:13, row:14, w:12, h:4 },
   ],
   cashflow: [
-    { id:'cf-main-card',        label:'Cash flow calendar', col:1, row:1, w:24, h:8 },
-    { id:'cf-due-card',         label:'Due soon',           col:1, row:9, w:12, h:4 },
-    { id:'cf-tax-card',         label:'Tax estimator',      col:13,row:9, w:12, h:4 },
+    { id:'cf-calendar-card',   label:'Cash flow',       col:1,  row:1,  w:24, h:8 },
+    { id:'cf-bottom-row',      label:'Due / Tax',       col:1,  row:9,  w:24, h:4 },
   ],
   tracker: [
-    { id:'tracker-main-card',   label:'Tracker',         col:1,  row:1,  w:24, h:12 },
+    { id:'tracker-card',       label:'Tracker',         col:1,  row:1,  w:24, h:12 },
   ],
   events: [
-    { id:'events-main-card',    label:'Events',          col:1,  row:1,  w:24, h:10 },
+    { id:'events-card',        label:'Events',          col:1,  row:1,  w:24, h:10 },
   ],
   savings: [
-    { id:'savings-metrics',     label:'Metrics',         col:1,  row:1,  w:24, h:2 },
-    { id:'settlement-panel',    label:'Settlement',      col:1,  row:3,  w:12, h:3 },
-    { id:'savings-projections', label:'Goal projections',col:13, row:3,  w:12, h:3 },
-    { id:'savings-grid',        label:'Streams',         col:1,  row:6,  w:24, h:6 },
+    { id:'savings-metrics',    label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'settlement-panel',   label:'Settlement',      col:1,  row:3,  w:12, h:3 },
+    { id:'savings-projections',label:'Projections',     col:13, row:3,  w:12, h:3 },
+    { id:'savings-grid',       label:'Streams',         col:1,  row:6,  w:24, h:6 },
   ],
   instruments: [
-    { id:'instr-metrics',       label:'Metrics',         col:1,  row:1,  w:24, h:2 },
-    { id:'instruments-grid',    label:'Instruments',     col:1,  row:3,  w:24, h:9 },
+    { id:'instr-metrics',      label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'instruments-grid',   label:'Instruments',     col:1,  row:3,  w:24, h:9 },
   ],
   insights: [
-    { id:'insights-nw',         label:'Net worth',       col:1,  row:1,  w:24, h:3 },
-    { id:'insights-history',    label:'History',         col:1,  row:4,  w:14, h:5 },
-    { id:'insights-bank',       label:'History bank',    col:15, row:4,  w:10, h:5 },
-    { id:'insights-import',     label:'Import data',     col:1,  row:9,  w:14, h:6 },
-    { id:'insights-suggestions',label:'AI suggestions',  col:15, row:9,  w:10, h:3 },
-    { id:'insights-velocity',   label:'Savings velocity',col:15, row:12, w:10, h:3 },
-    { id:'insights-charts',     label:'Person trends',   col:1,  row:15, w:24, h:5 },
-    { id:'insights-templates',  label:'Templates',       col:1,  row:20, w:24, h:3 },
+    // These wrap the static containers that ALWAYS exist in the HTML
+    { id:'ins-networth',       label:'Net worth',       col:1,  row:1,  w:24, h:3 },
+    { id:'ins-history',        label:'History',         col:1,  row:4,  w:14, h:5 },
+    { id:'ins-bank',           label:'History bank',    col:15, row:4,  w:10, h:5 },
+    { id:'ins-import',         label:'Import',          col:1,  row:9,  w:14, h:6 },
+    { id:'ins-suggestions',    label:'Suggestions',     col:15, row:9,  w:10, h:3 },
+    { id:'ins-velocity',       label:'Velocity',        col:15, row:12, w:10, h:3 },
+    { id:'ins-charts',         label:'Trends',          col:1,  row:15, w:24, h:5 },
+    { id:'ins-templates',      label:'Templates',       col:1,  row:20, w:24, h:3 },
   ],
 };
 
-// ─── STATE ──────────────────────────────────────────────────────
 let godMode      = false;
-let layoutConfig = {};   // { tabId: { islandId: {col,row,w,h} } }
+let layoutConfig = {};
 let dragState    = null;
 let resizeState  = null;
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 1 — ADD IDs TO EXISTING ELEMENTS THAT LACK THEM
-// ═══════════════════════════════════════════════════════════════
-function addMissingIds() {
-  // Tracker tab — wrap the single card
-  const trackerCard = document.querySelector('#tab-tracker > .card');
-  if (trackerCard && !trackerCard.id) trackerCard.id = 'tracker-main-card';
-
-  // Events tab
-  const eventsCard = document.querySelector('#tab-events > .card');
-  if (eventsCard && !eventsCard.id) eventsCard.id = 'events-main-card';
-
-  // Cashflow tab — the cards inside
-  const cfCards = document.querySelectorAll('#tab-cashflow > .card');
-  if (cfCards[0] && !cfCards[0].id) cfCards[0].id = 'cf-main-card';
-  if (cfCards[1] && !cfCards[1].id) cfCards[1].id = 'cf-due-card';
-  const cfTwoCol = document.querySelector('#tab-cashflow .two-col');
-  if (cfTwoCol) {
-    const cols = cfTwoCol.querySelectorAll(':scope > .card');
-    if (cols[0] && !cols[0].id) cols[0].id = 'cf-due-card';
-    if (cols[1] && !cols[1].id) cols[1].id = 'cf-tax-card';
-    // Unwrap from two-col so islands can be positioned independently
-    if (!cfTwoCol.dataset.unwrapped) {
-      cols.forEach(c => cfTwoCol.parentNode.insertBefore(c, cfTwoCol));
-      cfTwoCol.remove();
-      cfTwoCol.dataset.unwrapped = '1';
-    }
-  }
-
-  // Insights — wrap logical sections with IDs
-  const insightsTab = document.getElementById('tab-insights');
-  if (!insightsTab) return;
-
-  wrapInsightSection('insights-nw',          '.networth-card',          insightsTab);
-  wrapInsightSectionByRange('insights-history',   '#history-grid',     '#history-detail',  insightsTab);
-  wrapInsightSectionById('insights-bank',         '#history-bank-list',                    insightsTab);
-  wrapInsightImport(insightsTab);
-  wrapInsightSectionById('insights-suggestions',  '#suggestions-list',                     insightsTab);
-  wrapInsightSectionById('insights-velocity',     '#savings-velocity',                     insightsTab);
-  wrapInsightCharts(insightsTab);
-  wrapInsightTemplates(insightsTab);
-
-  // Savings — unwrap two-col from projections/settlement
-  const savTwoCol = document.querySelector('#tab-savings .two-col');
-  if (savTwoCol && !savTwoCol.dataset.unwrapped) {
-    const cols = savTwoCol.querySelectorAll(':scope > *');
-    cols.forEach(c => savTwoCol.parentNode.insertBefore(c, savTwoCol));
-    savTwoCol.remove();
-  }
-}
-
-function wrapInsightSection(newId, selector, parent) {
-  if (document.getElementById(newId)) return;
-  const el = parent.querySelector(selector);
-  if (!el) return;
-  el.id = newId;
-}
-
-function wrapInsightSectionById(newId, selector, parent) {
-  if (document.getElementById(newId)) return;
-  const el = parent.querySelector(selector);
-  if (!el || el.id === newId) return;
-  // wrap el plus preceding section title in a div
-  const wrap = document.createElement('div');
-  wrap.id = newId;
-  el.parentNode.insertBefore(wrap, el);
-  // grab preceding insight-section-title if present
-  const prev = wrap.previousElementSibling;
-  if (prev && prev.classList.contains('insight-section-title')) wrap.appendChild(prev);
-  wrap.appendChild(el);
-}
-
-function wrapInsightSectionByRange(newId, startSel, endSel, parent) {
-  if (document.getElementById(newId)) return;
-  const start = parent.querySelector(startSel);
-  const end   = parent.querySelector(endSel);
-  if (!start) return;
-  const wrap = document.createElement('div');
-  wrap.id = newId;
-  start.parentNode.insertBefore(wrap, start);
-  const prev = wrap.previousElementSibling;
-  if (prev && prev.classList.contains('insight-section-title')) wrap.appendChild(prev);
-  wrap.appendChild(start);
-  if (end) wrap.appendChild(end);
-}
-
-function wrapInsightImport(parent) {
-  if (document.getElementById('insights-import')) return;
-  const tabBtns = parent.querySelector('[id="import-tab-local"]');
-  if (!tabBtns) return;
-  const wrap = document.createElement('div');
-  wrap.id = 'insights-import';
-  tabBtns.parentNode.insertBefore(wrap, tabBtns.parentElement.previousElementSibling || tabBtns);
-  // Find the section title before the import tabs
-  let node = tabBtns.closest('[style]') || tabBtns.parentElement;
-  // simpler: just wrap from the flex div containing the import tabs down through both panels
-  const flexRow = parent.querySelector('div[style*="display:flex;gap:8px;margin-bottom:12px"]');
-  if (!flexRow) return;
-  const title = flexRow.previousElementSibling;
-  if (title && title.classList.contains('insight-section-title')) wrap.appendChild(title);
-  wrap.appendChild(flexRow);
-  const localPanel = document.getElementById('import-panel-local');
-  const drivePanel = document.getElementById('import-panel-drive');
-  if (localPanel) wrap.appendChild(localPanel);
-  if (drivePanel) wrap.appendChild(drivePanel);
-  const confirmBtn = document.getElementById('import-confirm-btn');
-  if (confirmBtn && confirmBtn.parentNode !== localPanel) wrap.appendChild(confirmBtn);
-  parent.insertBefore(wrap, parent.querySelector('.insight-section-title[style]') || parent.firstChild);
-}
-
-function wrapInsightCharts(parent) {
-  if (document.getElementById('insights-charts')) return;
-  const twoCol = parent.querySelector('.two-col');
-  if (!twoCol) return;
-  const wrap = document.createElement('div');
-  wrap.id = 'insights-charts';
-  const title = twoCol.previousElementSibling;
-  twoCol.parentNode.insertBefore(wrap, twoCol);
-  if (title && title.classList.contains('insight-section-title')) wrap.appendChild(title);
-  wrap.appendChild(twoCol);
-  const balChart = parent.querySelector('#balanceTrendChart')?.closest('.chart-card');
-  if (balChart) wrap.appendChild(balChart);
-}
-
-function wrapInsightTemplates(parent) {
-  if (document.getElementById('insights-templates')) return;
-  const templatesList = document.getElementById('templates-list');
-  if (!templatesList) return;
-  const wrap = document.createElement('div');
-  wrap.id = 'insights-templates';
-  const title = templatesList.previousElementSibling;
-  templatesList.parentNode.insertBefore(wrap, templatesList);
-  if (title && title.classList.contains('insight-section-title')) wrap.appendChild(title);
-  wrap.appendChild(templatesList);
-  // Save template button
-  const saveBtn = parent.querySelector('button[onclick*="saveTemplate"]');
-  if (saveBtn) wrap.appendChild(saveBtn);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// STEP 2 — STYLES
+// 1. STYLES
 // ═══════════════════════════════════════════════════════════════
 function injectStyles() {
-  if (document.getElementById('patch-v3-styles')) return;
+  if (document.getElementById('gm-styles')) return;
   const s = document.createElement('style');
-  s.id = 'patch-v3-styles';
+  s.id = 'gm-styles';
   s.textContent = `
-/* God mode button */
-.god-btn {
-  display:inline-flex;align-items:center;gap:5px;padding:5px 11px;
+.god-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
   border-radius:var(--radius);font-size:12px;cursor:pointer;
   border:1px solid var(--border);background:var(--surface);color:var(--text);
-  transition:all .2s;font-family:inherit;white-space:nowrap;
-}
-.god-btn.active {
-  background:linear-gradient(135deg,#7F77DD,#D4537E);
+  transition:all .2s;font-family:inherit;white-space:nowrap;}
+.god-btn.active{background:linear-gradient(135deg,#7F77DD,#D4537E);
   color:#fff;border-color:transparent;
-  box-shadow:0 0 0 3px rgba(127,119,221,0.2);
-}
+  box-shadow:0 0 0 3px rgba(127,119,221,0.22);}
 
-/* Floating god bar */
-.god-bar {
-  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-  background:var(--surface);border:1px solid rgba(127,119,221,0.4);
+#gm-bar{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+  background:var(--surface);border:1px solid rgba(127,119,221,0.5);
   border-radius:99px;padding:9px 18px;
   display:flex;align-items:center;gap:12px;
-  box-shadow:0 8px 32px rgba(0,0,0,0.2);z-index:900;
+  box-shadow:0 8px 28px rgba(0,0,0,0.22);z-index:900;
   font-size:12px;color:var(--text2);
-  opacity:0;pointer-events:none;transition:opacity .25s;
-  white-space:nowrap;
-}
-.god-bar.visible { opacity:1;pointer-events:all; }
-.god-pulse {
-  width:8px;height:8px;border-radius:99px;flex-shrink:0;
+  opacity:0;pointer-events:none;transition:opacity .25s;white-space:nowrap;}
+#gm-bar.on{opacity:1;pointer-events:all;}
+.gm-pulse{width:8px;height:8px;border-radius:99px;flex-shrink:0;
   background:linear-gradient(135deg,#7F77DD,#D4537E);
-  animation:godpulse 1.4s infinite;
-}
-@keyframes godpulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.3);}}
+  animation:gmpulse 1.4s infinite;}
+@keyframes gmpulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(1.4);}}
 
-/* Grid dot canvas */
-#god-dot-canvas {
-  position:fixed;inset:0;pointer-events:none;
-  z-index:1;opacity:0;transition:opacity .3s;
-}
-body.god-active #god-dot-canvas { opacity:1; }
+#gm-dot-canvas{position:fixed;inset:0;pointer-events:none;z-index:1;
+  opacity:0;transition:opacity .3s;}
+body.gm-on #gm-dot-canvas{opacity:1;}
 
-/* Island wrapper — always present, effects only in god mode */
-.gm-island {
-  position:relative;
-  border-radius:var(--radius-lg);
-  transition:outline .15s, box-shadow .15s;
-}
-body.god-active .gm-island {
-  outline:1.5px dashed transparent;
-  cursor:default;
-}
-body.god-active .gm-island:hover {
-  outline-color:rgba(127,119,221,0.5);
-  box-shadow:0 0 0 4px rgba(127,119,221,0.08);
-  z-index:10;
-}
-body.god-active .gm-island.is-dragging { opacity:0.4; }
-body.god-active .gm-island.drop-target {
-  outline-color:var(--accent);
-  background:var(--accent-light);
-  box-shadow:0 0 0 4px rgba(29,158,117,0.12);
-}
+.gm-grid{display:grid;grid-template-columns:repeat(24,1fr);
+  gap:14px;align-items:start;grid-auto-flow:dense;}
 
-/* Drag handle */
-.gm-handle {
-  display:none;position:absolute;top:7px;left:7px;z-index:20;
+.gm-wrap{position:relative;border-radius:var(--radius-lg);}
+body.gm-on .gm-wrap{
+  outline:1.5px dashed transparent;transition:outline .15s,box-shadow .15s;}
+body.gm-on .gm-wrap:hover{
+  outline-color:rgba(127,119,221,0.55);
+  box-shadow:0 0 0 4px rgba(127,119,221,0.09);z-index:10;}
+body.gm-on .gm-wrap.dragging{opacity:.35;}
+
+.gm-handle{display:none;position:absolute;top:7px;left:7px;z-index:30;
   width:24px;height:24px;border-radius:7px;
-  background:var(--purple);color:#fff;
-  cursor:grab;align-items:center;justify-content:center;
-  font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.2);
-  user-select:none;
-}
-.gm-handle:active { cursor:grabbing; }
-body.god-active .gm-island:hover .gm-handle { display:flex; }
+  background:#7F77DD;color:#fff;cursor:grab;
+  align-items:center;justify-content:center;font-size:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.22);user-select:none;}
+.gm-handle:active{cursor:grabbing;}
+body.gm-on .gm-wrap:hover .gm-handle{display:flex;}
 
-/* Resize grip */
-.gm-resize {
-  display:none;position:absolute;bottom:5px;right:5px;z-index:20;
+.gm-grip{display:none;position:absolute;bottom:5px;right:5px;z-index:30;
   width:14px;height:14px;cursor:se-resize;
-  border-right:3px solid var(--purple);border-bottom:3px solid var(--purple);
-  border-radius:0 0 3px 0;opacity:.8;
-}
-body.god-active .gm-island:hover .gm-resize { display:block; }
+  border-right:3px solid #7F77DD;border-bottom:3px solid #7F77DD;
+  border-radius:0 0 3px 0;opacity:.8;}
+body.gm-on .gm-wrap:hover .gm-grip{display:block;}
 
-/* Island label */
-.gm-label {
-  display:none;position:absolute;top:7px;right:7px;z-index:20;
+.gm-lbl{display:none;position:absolute;top:7px;right:7px;z-index:30;
   font-size:9px;padding:2px 8px;border-radius:99px;
-  background:rgba(127,119,221,0.18);color:var(--purple);
+  background:rgba(127,119,221,0.18);color:#7F77DD;
   font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-  pointer-events:none;
-}
-body.god-active .gm-island:hover .gm-label { display:block; }
+  pointer-events:none;}
+body.gm-on .gm-wrap:hover .gm-lbl{display:block;}
 
-/* Tab grid layout */
-.gm-grid {
-  display:grid;
-  grid-template-columns:repeat(24,1fr);
-  gap:14px;
-  align-items:start;
-  grid-auto-flow:dense;
-}
-
-/* Cash flow calendar */
-.cf-cal-outer { margin-bottom:0; }
-.cf-cal-grid {
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  gap:3px;
-}
-.cf-day-hdr {
-  text-align:center;font-size:9px;font-weight:700;
-  color:var(--text3);text-transform:uppercase;
-  letter-spacing:.06em;padding:3px 0 5px;
-}
-.cf-day {
-  min-height:62px;border-radius:7px;
-  border:1px solid var(--border2);background:var(--surface2);
-  padding:5px 5px 4px;cursor:pointer;transition:all .15s;
-  position:relative;overflow:hidden;
-}
-.cf-day:hover { border-color:var(--accent);background:var(--accent-light); }
-.cf-day.today {
-  border-color:var(--accent);background:var(--accent-light);
-  box-shadow:0 0 0 2px rgba(29,158,117,0.18);
-}
-.cf-day.active-day { outline:2px solid var(--accent); }
-.cf-day.has-inc  { border-left:3px solid var(--accent); }
-.cf-day.has-exp  { border-left:3px solid var(--danger); }
-.cf-day.has-both { border-left:3px solid var(--purple); }
-.cf-day-num {
-  font-size:10px;font-weight:700;color:var(--text2);margin-bottom:3px;
-}
-.cf-day.today .cf-day-num { color:var(--accent);font-size:11px; }
-.cf-pill {
-  font-size:8px;padding:1px 4px;border-radius:3px;
-  margin-bottom:1px;display:block;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-weight:600;line-height:1.4;
-}
-.cf-pill.inc { background:var(--accent-light);color:var(--accent-dark); }
-.cf-pill.exp { background:var(--danger-light);color:var(--danger); }
-.cf-more { font-size:8px;color:var(--text3);margin-top:1px; }
-.cf-detail {
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius-lg);padding:14px;
-  margin-top:12px;display:none;
-}
-.cf-detail.open { display:block; }
-.cf-detail-item {
-  display:flex;align-items:center;gap:8px;padding:8px 10px;
+/* ── Cash flow calendar ── */
+.cf-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.cf-dh{text-align:center;font-size:9px;font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.06em;padding:3px 0 5px;}
+.cf-day{min-height:62px;border-radius:7px;border:1px solid var(--border2);
+  background:var(--surface2);padding:5px 5px 4px;cursor:pointer;
+  transition:all .15s;position:relative;overflow:hidden;}
+.cf-day:hover{border-color:var(--accent);background:var(--accent-light);}
+.cf-day.cf-today{border-color:var(--accent);background:var(--accent-light);
+  box-shadow:0 0 0 2px rgba(29,158,117,.18);}
+.cf-day.cf-sel{outline:2px solid var(--accent);}
+.cf-day.cf-inc{border-left:3px solid var(--accent);}
+.cf-day.cf-exp{border-left:3px solid var(--danger);}
+.cf-day.cf-both{border-left:3px solid #7F77DD;}
+.cf-dn{font-size:10px;font-weight:700;color:var(--text2);margin-bottom:3px;}
+.cf-today .cf-dn{color:var(--accent);font-size:11px;}
+.cf-pill{font-size:8px;padding:1px 4px;border-radius:3px;margin-bottom:1px;
+  display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-weight:600;line-height:1.4;}
+.cf-pill.pi{background:var(--accent-light);color:var(--accent-dark);}
+.cf-pill.pe{background:var(--danger-light);color:var(--danger);}
+.cf-more{font-size:8px;color:var(--text3);margin-top:1px;}
+.cf-det{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:14px;margin-top:12px;display:none;}
+.cf-det.open{display:block;}
+.cf-di{display:flex;align-items:center;gap:8px;padding:8px 10px;
   border-radius:var(--radius);background:var(--surface2);
-  margin-bottom:6px;font-size:12px;
-}
-.cf-mark {
-  margin-left:auto;font-size:10px;padding:2px 8px;
-  border-radius:99px;border:1px solid var(--border);
-  background:none;color:var(--text2);cursor:pointer;font-family:inherit;
-  transition:all .15s;flex-shrink:0;
-}
-.cf-mark:hover,.cf-mark.paid {
-  background:var(--accent-light);color:var(--accent);border-color:var(--accent);
-}
-.cf-legend {
-  display:flex;gap:14px;flex-wrap:wrap;font-size:10px;
-  color:var(--text2);padding-top:10px;border-top:1px solid var(--border2);
-  margin-top:10px;
-}
-.cf-legend-dot {
-  display:inline-block;width:10px;height:10px;
-  border-radius:2px;margin-right:4px;vertical-align:middle;
-}
+  margin-bottom:6px;font-size:12px;}
+.cf-mp{margin-left:auto;font-size:10px;padding:2px 8px;border-radius:99px;
+  border:1px solid var(--border);background:none;color:var(--text2);
+  cursor:pointer;font-family:inherit;transition:all .15s;flex-shrink:0;}
+.cf-mp:hover,.cf-mp.paid{background:var(--accent-light);
+  color:var(--accent);border-color:var(--accent);}
+.cf-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--text2);
+  padding-top:10px;border-top:1px solid var(--border2);margin-top:10px;}
+.cf-ld{display:inline-block;width:10px;height:10px;border-radius:2px;
+  margin-right:4px;vertical-align:middle;}
 
-/* History bank delete button */
-.bank-x {
-  width:20px;height:20px;border-radius:99px;border:none;
+/* ── History bank delete ── */
+.bx{width:20px;height:20px;border-radius:99px;border:none;
   background:var(--danger-light);color:var(--danger);
   cursor:pointer;display:inline-flex;align-items:center;
   justify-content:center;font-size:10px;flex-shrink:0;
-  transition:all .15s;margin-left:4px;font-family:inherit;
-}
-.bank-x:hover { background:var(--danger);color:#fff; }
+  transition:all .15s;margin-left:4px;font-family:inherit;line-height:1;}
+.bx:hover{background:var(--danger);color:#fff;}
 
-/* Mobile: disable god mode */
 @media(max-width:900px){
-  .god-btn { display:none !important; }
-  .gm-grid { display:block !important; }
-  .gm-handle,.gm-resize { display:none !important; }
-}
-  `;
+  .god-btn{display:none!important;}
+  .gm-grid{display:block!important;}
+}`;
   document.head.appendChild(s);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 3 — WRAP ISLANDS & BUILD GRIDS
+// 2. ADD STATIC IDs TO ELEMENTS THAT NEED THEM
+//    Only wraps elements that ALWAYS exist in the DOM at load time
+// ═══════════════════════════════════════════════════════════════
+function addStaticIds() {
+  // ── Dashboard ──
+  const bbar = document.querySelector('#tab-dashboard .bbar-card');
+  if (bbar && !bbar.id) bbar.id = 'dash-bar';
+
+  const catChart = document.querySelector('#tab-dashboard .chart-card');
+  if (catChart && !catChart.id) catChart.id = 'dash-cat-chart';
+
+  // dash-global: the card next to cat chart
+  const twoColCards = document.querySelectorAll('#tab-dashboard .two-col .card');
+  twoColCards.forEach(c => {
+    if (!c.id && c.querySelector('#global-tbody')) c.id = 'dash-global';
+  });
+
+  // ── Tracker ──
+  const tCard = document.querySelector('#tab-tracker > .card');
+  if (tCard && !tCard.id) tCard.id = 'tracker-card';
+
+  // ── Events ──
+  const eCard = document.querySelector('#tab-events > .card');
+  if (eCard && !eCard.id) eCard.id = 'events-card';
+
+  // ── Cashflow ──
+  // Build the calendar card (replaces old timeline card)
+  buildCalendarCard();
+
+  // ── Insights: wrap static container elements ──
+  // These divs all exist in static HTML - we just give their parents IDs
+  wrapEl('ins-networth',    document.querySelector('#tab-insights .networth-card'));
+  wrapEl('ins-history',     buildInsBlock([
+    document.querySelector('#tab-insights .insight-section-title'),
+    document.getElementById('history-grid'),
+    document.getElementById('history-detail'),
+  ]));
+  wrapEl('ins-bank',        buildInsBlock([
+    nthInsTitle(1),
+    document.getElementById('history-bank-list'),
+  ]));
+  wrapEl('ins-import',      buildInsBlock([
+    nthInsTitle(2),
+    document.querySelector('#tab-insights [style*="display:flex"][style*="gap:8px"]'),
+    document.getElementById('import-panel-local'),
+    document.getElementById('import-panel-drive'),
+  ]));
+  wrapEl('ins-suggestions', buildInsBlock([
+    nthInsTitle(3),
+    document.getElementById('suggestions-list'),
+  ]));
+  wrapEl('ins-velocity',    buildInsBlock([
+    nthInsTitle(4),
+    document.getElementById('savings-velocity'),
+  ]));
+  wrapEl('ins-charts',      buildInsBlock([
+    nthInsTitle(5),
+    document.querySelector('#tab-insights .two-col'),
+    document.querySelector('#tab-insights .chart-card:last-of-type'),
+  ]));
+  wrapEl('ins-templates',   buildInsBlock([
+    nthInsTitle(6),
+    document.getElementById('templates-list'),
+    document.querySelector('#tab-insights button[onclick*="saveTemplate"]'),
+  ]));
+}
+
+// Wrap a single element with an id
+function wrapEl(id, el) {
+  if (!el || document.getElementById(id)) return;
+  el.id = id;
+}
+
+// Group multiple elements under a new wrapper div
+function buildInsBlock(els) {
+  const valid = els.filter(Boolean);
+  if (!valid.length) return null;
+  const wrap = document.createElement('div');
+  const parent = valid[0].parentNode;
+  parent.insertBefore(wrap, valid[0]);
+  valid.forEach(el => wrap.appendChild(el));
+  return wrap;
+}
+
+// Get nth .insight-section-title in the insights tab
+function nthInsTitle(n) {
+  const titles = document.querySelectorAll('#tab-insights .insight-section-title');
+  return titles[n] || null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 3. BUILD GRID PER TAB (wrap islands, set grid positions)
 // ═══════════════════════════════════════════════════════════════
 function buildTabGrids() {
-  Object.entries(TAB_ISLANDS).forEach(([tabId, islands]) => {
+  Object.entries(TAB_ISLANDS).forEach(([tabId, defs]) => {
     const tabEl = document.getElementById('tab-' + tabId);
     if (!tabEl) return;
 
-    // Create or find the grid container
+    // Get or create grid container
     let grid = document.getElementById('gm-grid-' + tabId);
     if (!grid) {
       grid = document.createElement('div');
       grid.className = 'gm-grid';
       grid.id = 'gm-grid-' + tabId;
-      // Move all direct children of tab into grid
+      // Move all direct tab children into grid
       Array.from(tabEl.children).forEach(c => grid.appendChild(c));
       tabEl.appendChild(grid);
     }
 
-    islands.forEach(def => {
+    defs.forEach(def => {
       const el = document.getElementById(def.id);
       if (!el) return;
 
-      // Wrap in island div if not already
-      let wrapper = el.closest('.gm-island');
-      if (!wrapper) {
-        wrapper = document.createElement('div');
-        wrapper.className = 'gm-island';
-        wrapper.dataset.islandId  = def.id;
-        wrapper.dataset.islandTab = tabId;
-        el.parentNode.insertBefore(wrapper, el);
-        wrapper.appendChild(el);
-        // Controls
+      // Wrap in .gm-wrap if not already
+      let wrap = el.closest('.gm-wrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'gm-wrap';
+        wrap.dataset.id  = def.id;
+        wrap.dataset.tab = tabId;
+        el.parentNode.insertBefore(wrap, el);
+        wrap.appendChild(el);
+
         const handle = document.createElement('div');
         handle.className = 'gm-handle';
         handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
         handle.title = 'Drag to move';
+
         const grip = document.createElement('div');
-        grip.className = 'gm-resize';
-        grip.title = 'Drag corner to resize';
-        const label = document.createElement('div');
-        label.className = 'gm-label';
-        label.textContent = def.label;
-        wrapper.appendChild(handle);
-        wrapper.appendChild(grip);
-        wrapper.appendChild(label);
+        grip.className = 'gm-grip';
+        grip.title = 'Drag to resize';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'gm-lbl';
+        lbl.textContent = def.label;
+
+        wrap.appendChild(handle);
+        wrap.appendChild(grip);
+        wrap.appendChild(lbl);
       }
 
-      // Move wrapper into grid if not there
-      if (wrapper.parentElement !== grid) grid.appendChild(wrapper);
+      // Move into grid container
+      if (wrap.parentElement !== grid) grid.appendChild(wrap);
 
-      // Apply grid position
-      applyPos(wrapper, tabId, def);
+      // Apply saved or default position
+      const saved = (layoutConfig[tabId] || {})[def.id];
+      const p = saved || def;
+      wrap.style.gridColumn = `${p.col} / span ${p.w}`;
+      wrap.style.gridRow    = `${p.row} / span ${p.h}`;
+      if (p.h > 1) wrap.style.minHeight = (p.h * GRID_ROW_H) + 'px';
     });
   });
 }
 
-function applyPos(wrapper, tabId, def) {
-  const saved = (layoutConfig[tabId] || {})[def.id];
-  const p = saved || def;
-  wrapper.style.gridColumn = `${p.col} / span ${p.w}`;
-  wrapper.style.gridRow    = `${p.row} / span ${p.h}`;
-  if (p.h > 1) wrapper.style.minHeight = (p.h * GRID_ROW_H) + 'px';
-}
-
 // ═══════════════════════════════════════════════════════════════
-// STEP 4 — GOD MODE TOGGLE
+// 4. GOD MODE
 // ═══════════════════════════════════════════════════════════════
 function toggleGodMode() {
   godMode = !godMode;
-  document.body.classList.toggle('god-active', godMode);
-  const btn = document.getElementById('god-btn');
+  document.body.classList.toggle('gm-on', godMode);
+
+  const btn = document.getElementById('gm-btn');
   if (btn) {
     btn.classList.toggle('active', godMode);
     btn.innerHTML = godMode
       ? '<i class="ti ti-lock-open"></i> God mode'
       : '<i class="ti ti-adjustments"></i> Configure';
   }
-  const bar = document.getElementById('god-bar');
-  if (bar) bar.classList.toggle('visible', godMode);
+  const bar = document.getElementById('gm-bar');
+  if (bar) bar.classList.toggle('on', godMode);
 
-  if (godMode) {
-    drawDotGrid();
-    bindDrag();
-  } else {
-    const c = document.getElementById('god-dot-canvas');
-    if (c) c.style.opacity = '0';
-    unbindDrag();
-    persistLayout();
-  }
+  if (godMode) { drawDots(); bindDrag(); }
+  else         { hideDots(); unbindDrag(); saveLayout(); }
 }
 window.toggleGodMode = toggleGodMode;
 
-function drawDotGrid() {
-  let cv = document.getElementById('god-dot-canvas');
-  if (!cv) {
-    cv = document.createElement('canvas');
-    cv.id = 'god-dot-canvas';
-    document.body.appendChild(cv);
-  }
+function drawDots() {
+  let cv = document.getElementById('gm-dot-canvas');
+  if (!cv) { cv = document.createElement('canvas'); cv.id = 'gm-dot-canvas'; document.body.appendChild(cv); }
   cv.width  = window.innerWidth;
-  cv.height = Math.max(document.body.scrollHeight, window.innerHeight);
+  cv.height = Math.max(document.body.scrollHeight, window.innerHeight * 2);
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, cv.width, cv.height);
   const cw = cv.width / GRID_COLS;
-  ctx.fillStyle = 'rgba(127,119,221,0.15)';
-  for (let c = 0; c <= GRID_COLS; c++) {
-    for (let r = 0; r * GRID_ROW_H < cv.height + GRID_ROW_H; r++) {
-      ctx.beginPath();
-      ctx.arc(c * cw, r * GRID_ROW_H, 1.5, 0, Math.PI * 2);
-      ctx.fill();
+  ctx.fillStyle = 'rgba(127,119,221,0.16)';
+  for (let c = 0; c <= GRID_COLS; c++)
+    for (let r = 0; r * GRID_ROW_H <= cv.height; r++) {
+      ctx.beginPath(); ctx.arc(c * cw, r * GRID_ROW_H, 1.5, 0, Math.PI * 2); ctx.fill();
     }
-  }
   cv.style.opacity = '1';
+}
+function hideDots() {
+  const cv = document.getElementById('gm-dot-canvas');
+  if (cv) cv.style.opacity = '0';
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 5 — DRAG (absolute positioning during drag, snap on drop)
+// 5. DRAG
 // ═══════════════════════════════════════════════════════════════
 function bindDrag() {
   document.querySelectorAll('.gm-handle').forEach(h => {
     h.addEventListener('mousedown', startDrag);
     h.addEventListener('touchstart', startDrag, { passive: false });
   });
-  document.querySelectorAll('.gm-resize').forEach(g => {
-    g.addEventListener('mousedown', startResize);
-  });
+  document.querySelectorAll('.gm-grip').forEach(g =>
+    g.addEventListener('mousedown', startResize));
 }
 function unbindDrag() {
   document.querySelectorAll('.gm-handle').forEach(h => {
     h.removeEventListener('mousedown', startDrag);
     h.removeEventListener('touchstart', startDrag);
   });
-  document.querySelectorAll('.gm-resize').forEach(g => {
-    g.removeEventListener('mousedown', startResize);
-  });
+  document.querySelectorAll('.gm-grip').forEach(g =>
+    g.removeEventListener('mousedown', startResize));
 }
 
 function startDrag(e) {
   if (!godMode) return;
   e.preventDefault();
-  const wrapper = e.currentTarget.closest('.gm-island');
-  if (!wrapper) return;
-  const grid = wrapper.closest('.gm-grid');
-  if (!grid) return;
-  const gridRect = grid.getBoundingClientRect();
-  const wRect    = wrapper.getBoundingClientRect();
-  const cx = e.touches ? e.touches[0].clientX : e.clientX;
-  const cy = e.touches ? e.touches[0].clientY : e.clientY;
-
-  wrapper.classList.add('is-dragging');
+  const wrap = e.currentTarget.closest('.gm-wrap');
+  const grid = wrap && wrap.closest('.gm-grid');
+  if (!wrap || !grid) return;
+  const gr   = grid.getBoundingClientRect();
+  const wr   = wrap.getBoundingClientRect();
+  const cx   = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy   = e.touches ? e.touches[0].clientY : e.clientY;
+  wrap.classList.add('dragging');
   dragState = {
-    wrapper, grid, gridRect,
-    offsetX: cx - wRect.left,
-    offsetY: cy - wRect.top,
-    origCol: parseStart(wrapper.style.gridColumn),
-    origRow: parseStart(wrapper.style.gridRow),
-    origW:   parseSpan(wrapper.style.gridColumn),
-    origH:   parseSpan(wrapper.style.gridRow),
+    wrap, grid,
+    gr,                          // grid rect at drag-start (fixed reference)
+    ox: cx - wr.left,            // offset within island
+    oy: cy - wr.top,
+    w: pSpan(wrap.style.gridColumn),
+    h: pSpan(wrap.style.gridRow),
   };
   document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup',   endDrag);
@@ -570,23 +429,20 @@ function onDrag(e) {
   e.preventDefault();
   const cx = e.touches ? e.touches[0].clientX : e.clientX;
   const cy = e.touches ? e.touches[0].clientY : e.clientY;
-  const { wrapper, grid, offsetX, offsetY, origW, origH } = dragState;
-  const gridRect = grid.getBoundingClientRect();
-  const cw = gridRect.width / GRID_COLS;
-  // Where the top-left of the island would land
-  const relX = cx - offsetX - gridRect.left + grid.scrollLeft;
-  const relY = cy - offsetY - gridRect.top  + window.scrollY;
-  let newCol = Math.max(1, Math.min(GRID_COLS - origW + 1, Math.round(relX / cw) + 1));
-  let newRow = Math.max(1, Math.round(relY / GRID_ROW_H) + 1);
-  wrapper.style.gridColumn = `${newCol} / span ${origW}`;
-  wrapper.style.gridRow    = `${newRow} / span ${origH}`;
+  const { wrap, gr, ox, oy, w, h } = dragState;
+  const cw  = gr.width / GRID_COLS;
+  const relX = cx - ox - gr.left;
+  const relY = cy - oy - gr.top + window.scrollY - (gr.top > 0 ? 0 : 0);
+  const col  = Math.max(1, Math.min(GRID_COLS - w + 1, Math.round(relX / cw) + 1));
+  const row  = Math.max(1, Math.round(relY / GRID_ROW_H) + 1);
+  wrap.style.gridColumn = `${col} / span ${w}`;
+  wrap.style.gridRow    = `${row} / span ${h}`;
 }
 
-function endDrag(e) {
+function endDrag() {
   if (!dragState) return;
-  const { wrapper } = dragState;
-  wrapper.classList.remove('is-dragging');
-  saveIslandPos(wrapper);
+  dragState.wrap.classList.remove('dragging');
+  recordPos(dragState.wrap);
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup',   endDrag);
   document.removeEventListener('touchmove', onDrag);
@@ -597,17 +453,17 @@ function endDrag(e) {
 function startResize(e) {
   if (!godMode) return;
   e.preventDefault();
-  const wrapper = e.currentTarget.closest('.gm-island');
-  if (!wrapper) return;
-  const grid = wrapper.closest('.gm-grid');
-  if (!grid) return;
+  const wrap = e.currentTarget.closest('.gm-wrap');
+  const grid = wrap && wrap.closest('.gm-grid');
+  if (!wrap || !grid) return;
+  const gr = grid.getBoundingClientRect();
   resizeState = {
-    wrapper, grid,
-    startX: e.clientX, startY: e.clientY,
-    startW: parseSpan(wrapper.style.gridColumn),
-    startH: parseSpan(wrapper.style.gridRow),
-    startCol: parseStart(wrapper.style.gridColumn),
-    startRow: parseStart(wrapper.style.gridRow),
+    wrap, gr,
+    sx: e.clientX, sy: e.clientY,
+    sw: pSpan(wrap.style.gridColumn),
+    sh: pSpan(wrap.style.gridRow),
+    sc: pStart(wrap.style.gridColumn),
+    sr: pStart(wrap.style.gridRow),
   };
   document.addEventListener('mousemove', onResize);
   document.addEventListener('mouseup',   endResize);
@@ -615,325 +471,320 @@ function startResize(e) {
 
 function onResize(e) {
   if (!resizeState) return;
-  const { wrapper, grid, startX, startY, startW, startH, startCol, startRow } = resizeState;
-  const gridRect = grid.getBoundingClientRect();
-  const cw = gridRect.width / GRID_COLS;
-  const dx = e.clientX - startX;
-  const dy = e.clientY - startY;
-  const newW = Math.max(3, Math.min(GRID_COLS - startCol + 1, startW + Math.round(dx / cw)));
-  const newH = Math.max(1, startH + Math.round(dy / GRID_ROW_H));
-  wrapper.style.gridColumn = `${startCol} / span ${newW}`;
-  wrapper.style.gridRow    = `${startRow} / span ${newH}`;
-  wrapper.style.minHeight  = (newH * GRID_ROW_H) + 'px';
+  const { wrap, gr, sx, sy, sw, sh, sc, sr } = resizeState;
+  const cw  = gr.width / GRID_COLS;
+  const newW = Math.max(3, Math.min(GRID_COLS - sc + 1, sw + Math.round((e.clientX - sx) / cw)));
+  const newH = Math.max(1, sh + Math.round((e.clientY - sy) / GRID_ROW_H));
+  wrap.style.gridColumn = `${sc} / span ${newW}`;
+  wrap.style.gridRow    = `${sr} / span ${newH}`;
+  wrap.style.minHeight  = (newH * GRID_ROW_H) + 'px';
 }
 
-function endResize(e) {
+function endResize() {
   if (!resizeState) return;
-  saveIslandPos(resizeState.wrapper);
+  recordPos(resizeState.wrap);
   document.removeEventListener('mousemove', onResize);
   document.removeEventListener('mouseup',   endResize);
   resizeState = null;
 }
 
-function saveIslandPos(wrapper) {
-  const id  = wrapper.dataset.islandId;
-  const tab = wrapper.dataset.islandTab;
+function recordPos(wrap) {
+  const id  = wrap.dataset.id;
+  const tab = wrap.dataset.tab;
   if (!id || !tab) return;
   if (!layoutConfig[tab]) layoutConfig[tab] = {};
   layoutConfig[tab][id] = {
-    col: parseStart(wrapper.style.gridColumn),
-    row: parseStart(wrapper.style.gridRow),
-    w:   parseSpan(wrapper.style.gridColumn),
-    h:   parseSpan(wrapper.style.gridRow),
+    col: pStart(wrap.style.gridColumn),
+    row: pStart(wrap.style.gridRow),
+    w:   pSpan(wrap.style.gridColumn),
+    h:   pSpan(wrap.style.gridRow),
   };
 }
 
-// ─── helpers ────────────────────────────────────────────────────
-function parseStart(v) { const m = (v||'').match(/^(\d+)/);   return m ? +m[1] : 1; }
-function parseSpan(v)  { const m = (v||'').match(/span\s+(\d+)/); return m ? +m[1] : 1; }
+function pStart(v) { const m = (v||'').match(/^(\d+)/);       return m ? +m[1] : 1; }
+function pSpan(v)  { const m = (v||'').match(/span\s+(\d+)/); return m ? +m[1] : 1; }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 6 — PERSIST & LOAD LAYOUT
+// 6. SAVE / LOAD LAYOUT
 // ═══════════════════════════════════════════════════════════════
-function persistLayout() {
+function saveLayout() {
   try { localStorage.setItem(LS_LAYOUT, JSON.stringify(layoutConfig)); } catch(e) {}
-  if (window.__LAYOUT_CONFIG__ !== undefined) window.__LAYOUT_CONFIG__ = layoutConfig;
-  // Inject into main captureState if available
   if (typeof window.markDirty === 'function') window.markDirty();
 }
 
 function loadLayout() {
-  // 1. From baked __BP_STATE__
   if (window.__BP_STATE__?.layoutConfig) {
     layoutConfig = window.__BP_STATE__.layoutConfig; return;
   }
-  // 2. From localStorage
   try {
-    const raw = localStorage.getItem(LS_LAYOUT);
-    if (raw) { layoutConfig = JSON.parse(raw); return; }
+    const r = localStorage.getItem(LS_LAYOUT);
+    if (r) { layoutConfig = JSON.parse(r); return; }
   } catch(e) {}
   layoutConfig = {};
 }
 
 function resetLayout() {
-  if (!confirm('Reset all layouts to defaults?')) return;
+  if (!confirm('Reset all layouts to defaults for all tabs?')) return;
   layoutConfig = {};
   try { localStorage.removeItem(LS_LAYOUT); } catch(e) {}
-  buildTabGrids();
-  alert('Layout reset.');
+  // Re-apply defaults
+  document.querySelectorAll('.gm-wrap').forEach(w => {
+    const id  = w.dataset.id;
+    const tab = w.dataset.tab;
+    const def = (TAB_ISLANDS[tab] || []).find(d => d.id === id);
+    if (def) {
+      w.style.gridColumn = `${def.col} / span ${def.w}`;
+      w.style.gridRow    = `${def.row} / span ${def.h}`;
+      w.style.minHeight  = (def.h * GRID_ROW_H) + 'px';
+    }
+  });
+  saveLayout();
 }
 window.resetLayout = resetLayout;
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 7 — INJECT GOD BUTTON + BAR
+// 7. GOD BAR + BUTTON
 // ═══════════════════════════════════════════════════════════════
 function injectGodUI() {
-  if (document.getElementById('god-btn')) return;
+  if (document.getElementById('gm-btn')) return;
   const navRight = document.querySelector('.nav-right');
   if (!navRight) return;
+
   const btn = document.createElement('button');
-  btn.id = 'god-btn';
+  btn.id = 'gm-btn';
   btn.className = 'god-btn';
   btn.innerHTML = '<i class="ti ti-adjustments"></i> Configure';
   btn.onclick = toggleGodMode;
   navRight.insertBefore(btn, navRight.firstChild);
 
   const bar = document.createElement('div');
-  bar.id = 'god-bar';
-  bar.className = 'god-bar';
+  bar.id = 'gm-bar';
   bar.innerHTML = `
-    <div class="god-pulse"></div>
-    <span style="font-weight:700;color:var(--purple);">God mode</span>
-    <span>Drag <i class="ti ti-grip-vertical" style="font-size:10px;"></i> to move &nbsp;·&nbsp; Corner grip to resize</span>
-    <button class="btn btn-sm" style="border-radius:99px;" onclick="resetLayout()">
+    <div class="gm-pulse"></div>
+    <span style="font-weight:700;color:#7F77DD;">God mode</span>
+    <span style="color:var(--text3);">
+      <i class="ti ti-grip-vertical" style="font-size:10px;"></i> drag to move &nbsp;·&nbsp; corner grip to resize
+    </span>
+    <button class="btn btn-sm" style="border-radius:99px;flex-shrink:0;" onclick="resetLayout()">
       <i class="ti ti-refresh"></i> Reset
     </button>
-    <button class="btn btn-sm btn-accent" style="border-radius:99px;" onclick="toggleGodMode()">
+    <button class="btn btn-sm btn-accent" style="border-radius:99px;flex-shrink:0;" onclick="toggleGodMode()">
       <i class="ti ti-check"></i> Save &amp; exit
     </button>`;
   document.body.appendChild(bar);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 8 — CASH FLOW CALENDAR (replaces old timeline)
+// 8. CASH FLOW CALENDAR
 // ═══════════════════════════════════════════════════════════════
-function buildCashFlowCalendar() {
+function buildCalendarCard() {
   const cfTab = document.getElementById('tab-cashflow');
-  if (!cfTab || cfTab.dataset.calBuilt) return;
-  cfTab.dataset.calBuilt = '1';
+  if (!cfTab) return;
 
-  const now         = new Date();
-  const month       = now.getMonth();
-  const year        = now.getFullYear();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDay    = new Date(year, month, 1).getDay();
-  const today       = now.getDate();
-  const MONTHS      = window.MONTHS || ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const DAYS        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const fmtC        = window.fmtC  || (n => n);
-  const toM         = window.toMonthly || (v => v);
-  const fmt         = window.fmt   || (n => n);
-  const getTkey     = window.getTkey || ((m,y) => `${y}-${m}`);
-  const tkey        = getTkey(month, year);
+  // Create the calendar card if it doesn't exist
+  if (!document.getElementById('cf-calendar-card')) {
+    const card = document.createElement('div');
+    card.id = 'cf-calendar-card';
+    card.className = 'card';
+    card.style.marginBottom = '14px';
+    cfTab.insertBefore(card, cfTab.firstChild);
+  }
 
-  // Build day → items map
-  const dayMap = {};
-  (window.items || []).filter(i => i.on && i.dueDay > 0).forEach(item => {
-    const d = item.dueDay;
-    if (d < 1 || d > daysInMonth) return;
-    if (!dayMap[d]) dayMap[d] = [];
-    dayMap[d].push(item);
+  // Create bottom row wrapper (due soon + tax)
+  if (!document.getElementById('cf-bottom-row')) {
+    const row = document.createElement('div');
+    row.id = 'cf-bottom-row';
+    row.className = 'two-col';
+    // Move existing two-col or standalone cards into it
+    const existing = cfTab.querySelector('.two-col:not(#cf-bottom-row)');
+    if (existing) {
+      cfTab.insertBefore(row, existing);
+      row.appendChild(existing);
+    }
+  }
+
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const card = document.getElementById('cf-calendar-card');
+  if (!card) return;
+
+  const now   = new Date();
+  const mo    = now.getMonth();
+  const yr    = now.getFullYear();
+  const dim   = new Date(yr, mo + 1, 0).getDate();
+  const first = new Date(yr, mo, 1).getDay();
+  const today = now.getDate();
+  const MN    = (window.MONTHS || ['January','February','March','April','May','June','July','August','September','October','November','December'])[mo];
+  const fmtC  = window.fmtC  || (n => String(n));
+  const toM   = window.toMonthly || (v => v);
+  const getTk = window.getTkey || ((m,y) => `${y}-${m}`);
+  const tkey  = getTk(mo, yr);
+
+  // Build day map
+  const dm = {};
+  (window.items || []).filter(i => i.on && i.dueDay > 0).forEach(it => {
+    const d = it.dueDay;
+    if (d < 1 || d > dim) return;
+    if (!dm[d]) dm[d] = [];
+    dm[d].push(it);
   });
 
-  // ── Calendar grid HTML ──
-  const dayHeaders = DAYS.map(d => `<div class="cf-day-hdr">${d}</div>`).join('');
-  const emptyCells = Array(firstDay).fill('<div></div>').join('');
-  const dayCells = Array.from({ length: daysInMonth }, (_, i) => {
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const hdrs = DAYS.map(d => `<div class="cf-dh">${d}</div>`).join('');
+  const empty = Array(first).fill('<div></div>').join('');
+  const cells = Array.from({ length: dim }, (_, i) => {
     const day = i + 1;
-    const its = dayMap[day] || [];
-    const hasInc = its.some(x => x.type === 'income');
-    const hasExp = its.some(x => x.type === 'expense');
-    const cls = ['cf-day',
-      day === today ? 'today' : '',
-      hasInc && hasExp ? 'has-both' : hasInc ? 'has-inc' : hasExp ? 'has-exp' : ''
-    ].filter(Boolean).join(' ');
-    const pills = its.slice(0, 2).map(it =>
-      `<span class="cf-pill ${it.type === 'income' ? 'inc' : 'exp'}">
-        ${it.type === 'income' ? '↑' : '↓'} ${it.name}
-      </span>`).join('');
-    const more = its.length > 2 ? `<div class="cf-more">+${its.length - 2} more</div>` : '';
-    return `<div class="${cls}" data-day="${day}" onclick="cfDayClick(${day})">${
-      `<div class="cf-day-num">${day}</div>${pills}${more}`}</div>`;
+    const its = dm[day] || [];
+    const hi  = its.some(x => x.type === 'income');
+    const he  = its.some(x => x.type === 'expense');
+    const cls = ['cf-day', day===today?'cf-today':'',
+      hi&&he?'cf-both':hi?'cf-inc':he?'cf-exp':''].filter(Boolean).join(' ');
+    const pills = its.slice(0,2).map(it =>
+      `<span class="cf-pill ${it.type==='income'?'pi':'pe'}">
+        ${it.type==='income'?'↑':'↓'} ${it.name}</span>`).join('');
+    const more = its.length>2 ? `<div class="cf-more">+${its.length-2}</div>` : '';
+    return `<div class="${cls}" data-d="${day}" onclick="cfClick(${day})">${
+      `<div class="cf-dn">${day}</div>${pills}${more}`}</div>`;
   }).join('');
 
-  // ── Replace old timeline card ──
-  let mainCard = document.getElementById('cf-main-card');
-  if (!mainCard) {
-    mainCard = cfTab.querySelector('.card');
-    if (mainCard) mainCard.id = 'cf-main-card';
-  }
-  if (mainCard) {
-    mainCard.innerHTML = `
-      <div class="card-head">
-        <span class="card-title">
-          <i class="ti ti-calendar-month" style="color:var(--accent);margin-right:5px;"></i>
-          ${MONTHS[month]} ${year}
-        </span>
-        <span id="cf-sel-label" style="font-size:11px;color:var(--text2);"></span>
-      </div>
-      <div class="cf-cal-grid" id="cf-cal-grid">
-        ${dayHeaders}${emptyCells}${dayCells}
-      </div>
-      <div class="cf-detail" id="cf-detail"></div>
-      <div class="cf-legend">
-        <span><span class="cf-legend-dot" style="background:var(--accent);"></span>Income due</span>
-        <span><span class="cf-legend-dot" style="background:var(--danger);"></span>Expense due</span>
-        <span><span class="cf-legend-dot" style="background:var(--purple);"></span>Both</span>
-      </div>`;
-  }
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="card-title">
+        <i class="ti ti-calendar-month" style="color:var(--accent);margin-right:4px;"></i>${MN} ${yr}
+      </span>
+      <span id="cf-sel-lbl" style="font-size:11px;color:var(--text2);"></span>
+    </div>
+    <div class="cf-cal-grid">${hdrs}${empty}${cells}</div>
+    <div class="cf-det" id="cf-det"></div>
+    <div class="cf-leg">
+      <span><span class="cf-ld" style="background:var(--accent);"></span>Income due</span>
+      <span><span class="cf-ld" style="background:var(--danger);"></span>Expense due</span>
+      <span><span class="cf-ld" style="background:#7F77DD;"></span>Both</span>
+    </div>`;
 
-  // ── Day click handler ──
-  window.cfDayClick = function(day) {
-    const its = dayMap[day] || [];
-    const lbl = document.getElementById('cf-sel-label');
-    const det = document.getElementById('cf-detail');
-    if (!det) return;
-    // Deselect old
-    document.querySelectorAll('.cf-day.active-day').forEach(d => d.classList.remove('active-day'));
-    const dayEl = document.querySelector(`.cf-day[data-day="${day}"]`);
-    if (dayEl) dayEl.classList.add('active-day');
-    if (!its.length) { det.classList.remove('open'); if(lbl) lbl.textContent=''; return; }
-    if (lbl) lbl.textContent = `Day ${day} — ${its.length} item${its.length > 1 ? 's' : ''}`;
-    const td = (window.trackerData && window.trackerData[tkey]) || {};
-    const getDays = window.getDaysUntil || (() => null);
+  // Day click
+  window.cfClick = function(day) {
+    const its = dm[day] || [];
+    const det = document.getElementById('cf-det');
+    const lbl = document.getElementById('cf-sel-lbl');
+    document.querySelectorAll('.cf-day.cf-sel').forEach(x => x.classList.remove('cf-sel'));
+    const dayEl = document.querySelector(`.cf-day[data-d="${day}"]`);
+    if (dayEl) dayEl.classList.add('cf-sel');
+    if (!its.length || !det) return;
+    if (lbl) lbl.textContent = `Day ${day} — ${its.length} item${its.length>1?'s':''}`;
+    const td  = (window.trackerData&&window.trackerData[tkey]) || {};
+    const gdu = window.getDaysUntil || (() => null);
     det.classList.add('open');
     det.innerHTML = `
       <div class="card-head" style="margin-bottom:10px;">
         <span class="card-title">Day ${day}</span>
-        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('cf-detail').classList.remove('open');document.getElementById('cf-sel-label').textContent=''">✕</button>
+        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('cf-det').classList.remove('open');document.getElementById('cf-sel-lbl').textContent=''">✕</button>
       </div>
-      ${its.map(item => {
-        const mv  = Math.round(toM(item.val, item.freq));
-        const key = (item.type === 'income' ? 'inc_' : 'exp_') + item.id;
+      ${its.map(it => {
+        const mv  = Math.round(toM(it.val, it.freq));
+        const key = (it.type==='income'?'inc_':'exp_') + it.id;
         const paid = td[key] !== undefined && td[key] !== '';
-        const d   = getDays(item.dueDay);
-        const urgCls = d === 0 ? 'color:var(--danger)' : d !== null && d <= 3 ? 'color:var(--warning)' : 'color:var(--text3)';
-        const urgTxt = d === null ? '' : d === 0 ? 'TODAY' : d + 'd';
-        return `<div class="cf-detail-item">
-          <div class="owner-dot ${item.owner||'shared'}"></div>
+        const d   = gdu(it.dueDay);
+        const uc  = d===0?'var(--danger)':d!==null&&d<=3?'var(--warning)':'var(--text3)';
+        const ut  = d===null?'':d===0?'TODAY':d+'d';
+        return `<div class="cf-di">
+          <div class="owner-dot ${it.owner||'shared'}"></div>
           <div style="flex:1;">
-            <div style="font-size:13px;font-weight:500;">${item.name}</div>
-            <div style="font-size:10px;color:var(--text2);">${item.type} · ${item.owner||'shared'} · ${item.tag||''}</div>
+            <div style="font-size:13px;font-weight:500;">${it.name}</div>
+            <div style="font-size:10px;color:var(--text2);">${it.type} · ${it.owner||'shared'} · ${it.tag||''}</div>
           </div>
-          <span style="font-size:14px;font-weight:700;color:${item.type==='income'?'var(--accent)':'var(--danger)'};">${fmtC(mv)}</span>
-          ${urgTxt ? `<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--surface3);${urgCls}">${urgTxt}</span>` : ''}
-          <button class="cf-mark ${paid?'paid':''}" onclick="cfMarkPaid('${item.id}','${item.type}','${tkey}',this,${mv})">
-            ${paid ? '✓ Paid' : 'Mark paid'}
+          <span style="font-size:14px;font-weight:700;color:${it.type==='income'?'var(--accent)':'var(--danger)'};">${fmtC(mv)}</span>
+          ${ut?`<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--surface3);color:${uc};">${ut}</span>`:''}
+          <button class="cf-mp ${paid?'paid':''}" onclick="cfPay('${it.id}','${it.type}','${tkey}',this,${mv})">
+            ${paid?'✓ Paid':'Mark paid'}
           </button>
         </div>`;
       }).join('')}`;
   };
 
-  window.cfMarkPaid = function(itemId, type, tkey, btn, val) {
+  window.cfPay = function(id, type, tk, btn, val) {
     if (!window.trackerData) window.trackerData = {};
-    if (!window.trackerData[tkey]) window.trackerData[tkey] = {};
-    const key = (type === 'income' ? 'inc_' : 'exp_') + itemId;
-    const wasPaid = btn.classList.contains('paid');
-    if (wasPaid) { delete window.trackerData[tkey][key]; btn.classList.remove('paid'); btn.textContent = 'Mark paid'; }
-    else { window.trackerData[tkey][key] = val; btn.classList.add('paid'); btn.textContent = '✓ Paid'; }
+    if (!window.trackerData[tk]) window.trackerData[tk] = {};
+    const key = (type==='income'?'inc_':'exp_') + id;
+    if (btn.classList.contains('paid')) {
+      delete window.trackerData[tk][key];
+      btn.classList.remove('paid'); btn.textContent = 'Mark paid';
+    } else {
+      window.trackerData[tk][key] = val;
+      btn.classList.add('paid'); btn.textContent = '✓ Paid';
+    }
     if (typeof window.markDirty === 'function') window.markDirty();
   };
 }
 
-// Re-render calendar when switching to cashflow (items may have changed)
+// Rebuild calendar when switching to cashflow tab
 function patchShowTab() {
+  if (window._gmShowTab) return;
   const orig = window.showTab;
-  if (!orig || window._patchedShowTab) return;
-  window._patchedShowTab = true;
+  if (!orig) return;
+  window._gmShowTab = true;
   window.showTab = function(t) {
     orig(t);
-    if (t === 'cashflow') {
-      // Allow time for tab to become visible
-      setTimeout(() => {
-        const cfTab = document.getElementById('tab-cashflow');
-        if (cfTab) delete cfTab.dataset.calBuilt; // force rebuild with latest items
-        buildCashFlowCalendar();
-        // Re-apply grid positions for this tab
-        buildTabGrids();
-      }, 60);
-    } else {
-      setTimeout(() => buildTabGrids(), 60);
-    }
-    // If god mode is on, rebind drag handles for newly visible tab
+    if (t === 'cashflow') setTimeout(renderCalendar, 60);
+    // Rebind drag if god mode is on
     if (godMode) setTimeout(bindDrag, 120);
   };
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 9 — HISTORY BANK DELETE (inject after each render)
+// 9. HISTORY BANK DELETE
 // ═══════════════════════════════════════════════════════════════
-function patchHistoryBank() {
-  const orig = window.renderHistoryBank;
-  if (!orig || window._patchedBank) return;
-  window._patchedBank = true;
+function patchBank() {
+  if (window._gmBank) return;
+  const origRHB = window.renderHistoryBank;
+  const origRI  = window.renderInsights;
+  if (!origRHB) return;
+  window._gmBank = true;
 
-  window.renderHistoryBank = function() {
-    orig();
-    addBankDeleteButtons();
-  };
-
-  // Also add to renderInsights patch
-  const origInsights = window.renderInsights;
-  if (origInsights) {
-    window.renderInsights = function() {
-      origInsights();
-      setTimeout(addBankDeleteButtons, 50);
-    };
-  }
-}
-
-function addBankDeleteButtons() {
-  const list = document.getElementById('history-bank-list');
-  if (!list) return;
-  list.querySelectorAll('.history-bank-item').forEach(item => {
-    if (item.querySelector('.bank-x')) return; // already has button
-
-    // Determine month key from the item's text or existing onclick
-    let monthKey = null;
-    const resolveBtn = item.querySelector('button[onclick*="openConflictModal"]');
-    if (resolveBtn) {
-      const m = resolveBtn.getAttribute('onclick').match(/openConflictModal\('([^']+)'\)/);
-      if (m) monthKey = m[1];
-    }
-    if (!monthKey) {
-      // Try to derive from the label text (e.g. "Apr 2025")
-      const span = item.querySelector('span[style*="font-weight"]');
-      if (span && window.insightHistory) {
-        const txt = span.textContent.trim();
-        const MS = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        monthKey = Object.keys(window.insightHistory).find(k => {
-          const [y, mi] = k.split('-');
-          return (MS[+mi] + ' ' + y) === txt;
-        });
+  function addX() {
+    const list = document.getElementById('history-bank-list');
+    if (!list) return;
+    list.querySelectorAll('.history-bank-item').forEach(item => {
+      if (item.querySelector('.bx')) return;
+      // Find monthKey
+      let key = null;
+      const resolveBtn = item.querySelector('button[onclick*="openConflictModal"]');
+      if (resolveBtn) {
+        const m = resolveBtn.getAttribute('onclick').match(/openConflictModal\('([^']+)'\)/);
+        if (m) key = m[1];
       }
-    }
-    if (!monthKey) return;
+      if (!key && window.insightHistory) {
+        const span = item.querySelector('span[style*="font-weight"]');
+        if (span) {
+          const txt = span.textContent.trim();
+          const MS  = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          key = Object.keys(window.insightHistory).find(k => {
+            const [y,mi] = k.split('-');
+            return (MS[+mi] + ' ' + y) === txt;
+          });
+        }
+      }
+      if (!key) return;
+      const btn = document.createElement('button');
+      btn.className = 'bx';
+      btn.title = 'Delete this month';
+      btn.innerHTML = '✕';
+      btn.onclick = ev => { ev.stopPropagation(); delBank(key); };
+      item.appendChild(btn);
+    });
+  }
 
-    const btn = document.createElement('button');
-    btn.className = 'bank-x';
-    btn.title = 'Delete this month from bank';
-    btn.innerHTML = '<i class="ti ti-x" style="font-size:9px;"></i>';
-    btn.onclick = e => { e.stopPropagation(); deleteBankMonth(monthKey); };
-    item.appendChild(btn);
-  });
+  window.renderHistoryBank = function() { origRHB(); setTimeout(addX, 40); };
+  if (origRI) window.renderInsights = function() { origRI(); setTimeout(addX, 80); };
 }
 
-function deleteBankMonth(key) {
-  const [y, mi] = key.split('-');
+function delBank(key) {
+  const [y,mi] = key.split('-');
   const MS = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const label = (MS[+mi] || mi) + ' ' + y;
-  if (!confirm(`Delete ${label} from History Bank?\n\nThis removes the month's tracker actuals, history snapshot, and bank entry. Cannot be undone.`)) return;
-  if (window.insightHistory)  delete window.insightHistory[key];
+  if (!confirm(`Delete ${MS[+mi]} ${y} from History Bank?\n\nRemoves tracker actuals, history snapshot and bank entry. Cannot be undone.`)) return;
+  if (window.insightHistory)   delete window.insightHistory[key];
   if (window.pendingConflicts) delete window.pendingConflicts[key];
   if (window.trackerData)      delete window.trackerData[key];
   if (window.monthHistory)     delete window.monthHistory[key];
@@ -944,61 +795,48 @@ function deleteBankMonth(key) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 10 — PATCH captureState TO SAVE LAYOUT
+// 10. PATCH captureState TO INCLUDE LAYOUT
 // ═══════════════════════════════════════════════════════════════
 function patchState() {
-  const origCapture = window.captureState;
-  const origApply   = window.applyState;
-  if (origCapture && !window._patchedCapture) {
-    window._patchedCapture = true;
+  const origC = window.captureState;
+  const origA = window.applyState;
+  if (origC && !window._gmCapture) {
+    window._gmCapture = true;
     window.captureState = function() {
-      const s = origCapture();
-      s.layoutConfig = layoutConfig;
-      return s;
+      const s = origC(); s.layoutConfig = layoutConfig; return s;
     };
   }
-  if (origApply && !window._patchedApply) {
-    window._patchedApply = true;
+  if (origA && !window._gmApply) {
+    window._gmApply = true;
     window.applyState = function(s) {
-      origApply(s);
-      if (s?.layoutConfig) {
-        layoutConfig = s.layoutConfig;
-        buildTabGrids(); // re-apply saved positions
-      }
+      origA(s);
+      if (s?.layoutConfig) { layoutConfig = s.layoutConfig; buildTabGrids(); }
     };
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// INIT
+// INIT — runs after main site init() has completed
 // ═══════════════════════════════════════════════════════════════
-function init() {
+function patchInit() {
   injectStyles();
   loadLayout();
-  addMissingIds();
+  addStaticIds();
   buildTabGrids();
   injectGodUI();
-  buildCashFlowCalendar();
-  patchHistoryBank();
+  buildCalendarCard();
+  patchBank();
   patchShowTab();
   patchState();
-  // Add delete buttons after first insights render (delayed because insights
-  // renders on tab switch, not on load)
-  const insightsOrig = window.renderInsights;
-  if (insightsOrig && !window._patchedIns) {
-    window._patchedIns = true;
-    window.renderInsights = function() {
-      insightsOrig();
-      setTimeout(addBankDeleteButtons, 80);
-    };
-  }
-  console.log('[patch v3] ✓ God mode, calendar, bank delete — all active');
+  console.log('[patch v4] ✓ loaded');
 }
 
+// Wait for main site DOMContentLoaded to finish, then run
+// Using 200ms to ensure main site init() has fully completed
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => setTimeout(init, 120));
+  document.addEventListener('DOMContentLoaded', () => setTimeout(patchInit, 200));
 } else {
-  setTimeout(init, 120);
+  setTimeout(patchInit, 200);
 }
 
 })();
