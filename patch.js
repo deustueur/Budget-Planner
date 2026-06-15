@@ -1,919 +1,1004 @@
 // ═══════════════════════════════════════════════════════════════════
-// BUDGET PLANNER — PATCH v2
-// Fixes: layout gravity-fill + God mode, cash flow calendar, 
-//        history bank delete button
+// BUDGET PLANNER — PATCH v3
+// Fixes: God mode (all tabs), cash flow calendar, history bank delete
 // ═══════════════════════════════════════════════════════════════════
-
-(function(){
+(function () {
 'use strict';
 
-// ─── CONSTANTS ──────────────────────────────────────────────────
-const GRID_COLS = 24;
-const GRID_ROW_H = 80; // px per row unit
-const GOD_STORAGE_KEY = 'bp_layout_v1';
+// ─── CONFIG ─────────────────────────────────────────────────────
+const GRID_COLS    = 24;
+const GRID_ROW_H   = 80;   // px per row unit
+const LS_LAYOUT    = 'bp_layout_v3';
 
-// ─── STATE ──────────────────────────────────────────────────────
-let godMode = false;
-let layoutConfig = {}; // { tabId: { islandId: {col,row,w,h} } }
-let dragState = null;  // active drag info
-let resizeState = null;
-
-// Default island definitions per tab
-const ISLAND_DEFAULTS = {
+// Map of real element IDs that exist in the HTML per tab
+// These are the actual draggable islands
+const TAB_ISLANDS = {
   dashboard: [
-    { id:'dash-metrics',    label:'Metrics',          col:1,  row:1, w:24, h:2 },
-    { id:'dash-bar',        label:'Budget bar',       col:1,  row:3, w:24, h:1 },
-    { id:'income-card',     label:'Income',           col:1,  row:4, w:12, h:6 },
-    { id:'expense-card',    label:'Expenses',         col:13, row:4, w:12, h:6 },
-    { id:'dash-cat-chart',  label:'Category chart',   col:1,  row:10,w:12, h:4 },
-    { id:'dash-global',     label:'All items',        col:13, row:10,w:12, h:4 },
-    { id:'dash-savings-panel', label:'Tagged savings',col:1,  row:14,w:24, h:3 },
+    { id:'dash-metrics',        label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'dash-bar',            label:'Budget bar',      col:1,  row:3,  w:24, h:1 },
+    { id:'dash-savings-panel',  label:'Tagged savings',  col:1,  row:4,  w:24, h:3 },
+    { id:'income-card',         label:'Income',          col:1,  row:7,  w:12, h:7 },
+    { id:'expense-card',        label:'Expenses',        col:13, row:7,  w:12, h:7 },
+    { id:'dash-cat-chart',      label:'Category chart',  col:1,  row:14, w:12, h:4 },
+    { id:'dash-global',         label:'All items',       col:13, row:14, w:12, h:4 },
   ],
   cashflow: [
-    { id:'cf-calendar-island', label:'Calendar',      col:1,  row:1, w:24, h:7 },
-    { id:'cf-due-island',      label:'Due soon',      col:1,  row:8, w:12, h:4 },
-    { id:'cf-tax-island',      label:'Tax estimator', col:13, row:8, w:12, h:4 },
+    { id:'cf-main-card',        label:'Cash flow calendar', col:1, row:1, w:24, h:8 },
+    { id:'cf-due-card',         label:'Due soon',           col:1, row:9, w:12, h:4 },
+    { id:'cf-tax-card',         label:'Tax estimator',      col:13,row:9, w:12, h:4 },
   ],
   tracker: [
-    { id:'tracker-island', label:'Tracker',           col:1,  row:1, w:24, h:12 },
+    { id:'tracker-main-card',   label:'Tracker',         col:1,  row:1,  w:24, h:12 },
   ],
   events: [
-    { id:'events-island',  label:'Events',            col:1,  row:1, w:24, h:10 },
+    { id:'events-main-card',    label:'Events',          col:1,  row:1,  w:24, h:10 },
   ],
   savings: [
-    { id:'savings-metrics-island', label:'Metrics',   col:1,  row:1, w:24, h:2 },
-    { id:'savings-settlement',     label:'Settlement',col:1,  row:3, w:12, h:3 },
-    { id:'savings-projections-island',label:'Goals',  col:13, row:3, w:12, h:3 },
-    { id:'savings-grid-island',    label:'Streams',   col:1,  row:6, w:24, h:6 },
+    { id:'savings-metrics',     label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'settlement-panel',    label:'Settlement',      col:1,  row:3,  w:12, h:3 },
+    { id:'savings-projections', label:'Goal projections',col:13, row:3,  w:12, h:3 },
+    { id:'savings-grid',        label:'Streams',         col:1,  row:6,  w:24, h:6 },
   ],
   instruments: [
-    { id:'instr-metrics-island',   label:'Metrics',   col:1,  row:1, w:24, h:2 },
-    { id:'instr-grid-island',      label:'Instruments',col:1, row:3, w:24, h:9 },
+    { id:'instr-metrics',       label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'instruments-grid',    label:'Instruments',     col:1,  row:3,  w:24, h:9 },
   ],
   insights: [
-    { id:'nw-island',         label:'Net worth',      col:1,  row:1, w:24, h:3 },
-    { id:'history-island',    label:'History',        col:1,  row:4, w:14, h:5 },
-    { id:'bank-island',       label:'History bank',   col:15, row:4, w:10, h:5 },
-    { id:'import-island',     label:'Import',         col:1,  row:9, w:14, h:6 },
-    { id:'suggestions-island',label:'AI suggestions', col:15, row:9, w:10, h:3 },
-    { id:'velocity-island',   label:'Savings velocity',col:15,row:12,w:10, h:3 },
-    { id:'person-charts-island',label:'Person trends',col:1, row:15,w:24, h:4 },
-    { id:'templates-island',  label:'Templates',      col:1, row:19,w:24, h:3 },
+    { id:'insights-nw',         label:'Net worth',       col:1,  row:1,  w:24, h:3 },
+    { id:'insights-history',    label:'History',         col:1,  row:4,  w:14, h:5 },
+    { id:'insights-bank',       label:'History bank',    col:15, row:4,  w:10, h:5 },
+    { id:'insights-import',     label:'Import data',     col:1,  row:9,  w:14, h:6 },
+    { id:'insights-suggestions',label:'AI suggestions',  col:15, row:9,  w:10, h:3 },
+    { id:'insights-velocity',   label:'Savings velocity',col:15, row:12, w:10, h:3 },
+    { id:'insights-charts',     label:'Person trends',   col:1,  row:15, w:24, h:5 },
+    { id:'insights-templates',  label:'Templates',       col:1,  row:20, w:24, h:3 },
   ],
 };
 
-// ─── INJECT STYLES ──────────────────────────────────────────────
+// ─── STATE ──────────────────────────────────────────────────────
+let godMode      = false;
+let layoutConfig = {};   // { tabId: { islandId: {col,row,w,h} } }
+let dragState    = null;
+let resizeState  = null;
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 1 — ADD IDs TO EXISTING ELEMENTS THAT LACK THEM
+// ═══════════════════════════════════════════════════════════════
+function addMissingIds() {
+  // Tracker tab — wrap the single card
+  const trackerCard = document.querySelector('#tab-tracker > .card');
+  if (trackerCard && !trackerCard.id) trackerCard.id = 'tracker-main-card';
+
+  // Events tab
+  const eventsCard = document.querySelector('#tab-events > .card');
+  if (eventsCard && !eventsCard.id) eventsCard.id = 'events-main-card';
+
+  // Cashflow tab — the cards inside
+  const cfCards = document.querySelectorAll('#tab-cashflow > .card');
+  if (cfCards[0] && !cfCards[0].id) cfCards[0].id = 'cf-main-card';
+  if (cfCards[1] && !cfCards[1].id) cfCards[1].id = 'cf-due-card';
+  const cfTwoCol = document.querySelector('#tab-cashflow .two-col');
+  if (cfTwoCol) {
+    const cols = cfTwoCol.querySelectorAll(':scope > .card');
+    if (cols[0] && !cols[0].id) cols[0].id = 'cf-due-card';
+    if (cols[1] && !cols[1].id) cols[1].id = 'cf-tax-card';
+    // Unwrap from two-col so islands can be positioned independently
+    if (!cfTwoCol.dataset.unwrapped) {
+      cols.forEach(c => cfTwoCol.parentNode.insertBefore(c, cfTwoCol));
+      cfTwoCol.remove();
+      cfTwoCol.dataset.unwrapped = '1';
+    }
+  }
+
+  // Insights — wrap logical sections with IDs
+  const insightsTab = document.getElementById('tab-insights');
+  if (!insightsTab) return;
+
+  wrapInsightSection('insights-nw',          '.networth-card',          insightsTab);
+  wrapInsightSectionByRange('insights-history',   '#history-grid',     '#history-detail',  insightsTab);
+  wrapInsightSectionById('insights-bank',         '#history-bank-list',                    insightsTab);
+  wrapInsightImport(insightsTab);
+  wrapInsightSectionById('insights-suggestions',  '#suggestions-list',                     insightsTab);
+  wrapInsightSectionById('insights-velocity',     '#savings-velocity',                     insightsTab);
+  wrapInsightCharts(insightsTab);
+  wrapInsightTemplates(insightsTab);
+
+  // Savings — unwrap two-col from projections/settlement
+  const savTwoCol = document.querySelector('#tab-savings .two-col');
+  if (savTwoCol && !savTwoCol.dataset.unwrapped) {
+    const cols = savTwoCol.querySelectorAll(':scope > *');
+    cols.forEach(c => savTwoCol.parentNode.insertBefore(c, savTwoCol));
+    savTwoCol.remove();
+  }
+}
+
+function wrapInsightSection(newId, selector, parent) {
+  if (document.getElementById(newId)) return;
+  const el = parent.querySelector(selector);
+  if (!el) return;
+  el.id = newId;
+}
+
+function wrapInsightSectionById(newId, selector, parent) {
+  if (document.getElementById(newId)) return;
+  const el = parent.querySelector(selector);
+  if (!el || el.id === newId) return;
+  // wrap el plus preceding section title in a div
+  const wrap = document.createElement('div');
+  wrap.id = newId;
+  el.parentNode.insertBefore(wrap, el);
+  // grab preceding insight-section-title if present
+  const prev = wrap.previousElementSibling;
+  if (prev && prev.classList.contains('insight-section-title')) wrap.appendChild(prev);
+  wrap.appendChild(el);
+}
+
+function wrapInsightSectionByRange(newId, startSel, endSel, parent) {
+  if (document.getElementById(newId)) return;
+  const start = parent.querySelector(startSel);
+  const end   = parent.querySelector(endSel);
+  if (!start) return;
+  const wrap = document.createElement('div');
+  wrap.id = newId;
+  start.parentNode.insertBefore(wrap, start);
+  const prev = wrap.previousElementSibling;
+  if (prev && prev.classList.contains('insight-section-title')) wrap.appendChild(prev);
+  wrap.appendChild(start);
+  if (end) wrap.appendChild(end);
+}
+
+function wrapInsightImport(parent) {
+  if (document.getElementById('insights-import')) return;
+  const tabBtns = parent.querySelector('[id="import-tab-local"]');
+  if (!tabBtns) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'insights-import';
+  tabBtns.parentNode.insertBefore(wrap, tabBtns.parentElement.previousElementSibling || tabBtns);
+  // Find the section title before the import tabs
+  let node = tabBtns.closest('[style]') || tabBtns.parentElement;
+  // simpler: just wrap from the flex div containing the import tabs down through both panels
+  const flexRow = parent.querySelector('div[style*="display:flex;gap:8px;margin-bottom:12px"]');
+  if (!flexRow) return;
+  const title = flexRow.previousElementSibling;
+  if (title && title.classList.contains('insight-section-title')) wrap.appendChild(title);
+  wrap.appendChild(flexRow);
+  const localPanel = document.getElementById('import-panel-local');
+  const drivePanel = document.getElementById('import-panel-drive');
+  if (localPanel) wrap.appendChild(localPanel);
+  if (drivePanel) wrap.appendChild(drivePanel);
+  const confirmBtn = document.getElementById('import-confirm-btn');
+  if (confirmBtn && confirmBtn.parentNode !== localPanel) wrap.appendChild(confirmBtn);
+  parent.insertBefore(wrap, parent.querySelector('.insight-section-title[style]') || parent.firstChild);
+}
+
+function wrapInsightCharts(parent) {
+  if (document.getElementById('insights-charts')) return;
+  const twoCol = parent.querySelector('.two-col');
+  if (!twoCol) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'insights-charts';
+  const title = twoCol.previousElementSibling;
+  twoCol.parentNode.insertBefore(wrap, twoCol);
+  if (title && title.classList.contains('insight-section-title')) wrap.appendChild(title);
+  wrap.appendChild(twoCol);
+  const balChart = parent.querySelector('#balanceTrendChart')?.closest('.chart-card');
+  if (balChart) wrap.appendChild(balChart);
+}
+
+function wrapInsightTemplates(parent) {
+  if (document.getElementById('insights-templates')) return;
+  const templatesList = document.getElementById('templates-list');
+  if (!templatesList) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'insights-templates';
+  const title = templatesList.previousElementSibling;
+  templatesList.parentNode.insertBefore(wrap, templatesList);
+  if (title && title.classList.contains('insight-section-title')) wrap.appendChild(title);
+  wrap.appendChild(templatesList);
+  // Save template button
+  const saveBtn = parent.querySelector('button[onclick*="saveTemplate"]');
+  if (saveBtn) wrap.appendChild(saveBtn);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 2 — STYLES
+// ═══════════════════════════════════════════════════════════════
 function injectStyles() {
+  if (document.getElementById('patch-v3-styles')) return;
   const s = document.createElement('style');
-  s.id = 'patch-styles';
+  s.id = 'patch-v3-styles';
   s.textContent = `
-/* ── God mode button ── */
-.god-mode-btn {
-  display:inline-flex;align-items:center;gap:5px;
-  padding:5px 11px;border-radius:var(--radius);font-size:12px;
-  cursor:pointer;border:1px solid var(--border);
-  background:var(--surface);color:var(--text);
+/* God mode button */
+.god-btn {
+  display:inline-flex;align-items:center;gap:5px;padding:5px 11px;
+  border-radius:var(--radius);font-size:12px;cursor:pointer;
+  border:1px solid var(--border);background:var(--surface);color:var(--text);
   transition:all .2s;font-family:inherit;white-space:nowrap;
 }
-.god-mode-btn.active {
+.god-btn.active {
   background:linear-gradient(135deg,#7F77DD,#D4537E);
   color:#fff;border-color:transparent;
-  box-shadow:0 0 0 3px rgba(127,119,221,0.25);
+  box-shadow:0 0 0 3px rgba(127,119,221,0.2);
 }
-.god-mode-btn i { font-size:13px; }
 
-/* ── God mode floating bar ── */
+/* Floating god bar */
 .god-bar {
   position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:99px;padding:8px 16px;
-  display:flex;align-items:center;gap:10px;
-  box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:800;
+  background:var(--surface);border:1px solid rgba(127,119,221,0.4);
+  border-radius:99px;padding:9px 18px;
+  display:flex;align-items:center;gap:12px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.2);z-index:900;
   font-size:12px;color:var(--text2);
-  opacity:0;pointer-events:none;transition:opacity .2s;
+  opacity:0;pointer-events:none;transition:opacity .25s;
+  white-space:nowrap;
 }
 .god-bar.visible { opacity:1;pointer-events:all; }
-.god-bar-dot {
-  width:8px;height:8px;border-radius:99px;
+.god-pulse {
+  width:8px;height:8px;border-radius:99px;flex-shrink:0;
   background:linear-gradient(135deg,#7F77DD,#D4537E);
-  animation:pulse 1.5s infinite;
+  animation:godpulse 1.4s infinite;
 }
+@keyframes godpulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.3);}}
 
-/* ── Island wrappers in god mode ── */
-.island-wrapper {
+/* Grid dot canvas */
+#god-dot-canvas {
+  position:fixed;inset:0;pointer-events:none;
+  z-index:1;opacity:0;transition:opacity .3s;
+}
+body.god-active #god-dot-canvas { opacity:1; }
+
+/* Island wrapper — always present, effects only in god mode */
+.gm-island {
   position:relative;
-  transition:box-shadow .15s;
-}
-.god-active .island-wrapper {
-  outline:2px dashed transparent;
   border-radius:var(--radius-lg);
-  transition:outline .15s,box-shadow .15s;
+  transition:outline .15s, box-shadow .15s;
 }
-.god-active .island-wrapper:hover {
-  outline-color:var(--purple);
-  box-shadow:0 0 0 4px rgba(127,119,221,0.12);
+body.god-active .gm-island {
+  outline:1.5px dashed transparent;
+  cursor:default;
 }
-.god-active .island-wrapper.dragging {
-  opacity:.5;outline-color:var(--accent);
+body.god-active .gm-island:hover {
+  outline-color:rgba(127,119,221,0.5);
+  box-shadow:0 0 0 4px rgba(127,119,221,0.08);
+  z-index:10;
 }
-.god-active .island-wrapper.drag-over {
+body.god-active .gm-island.is-dragging { opacity:0.4; }
+body.god-active .gm-island.drop-target {
   outline-color:var(--accent);
   background:var(--accent-light);
-  box-shadow:0 0 0 4px rgba(29,158,117,0.15);
+  box-shadow:0 0 0 4px rgba(29,158,117,0.12);
 }
 
 /* Drag handle */
-.island-handle {
-  display:none;position:absolute;top:6px;left:6px;z-index:10;
-  width:22px;height:22px;border-radius:6px;
+.gm-handle {
+  display:none;position:absolute;top:7px;left:7px;z-index:20;
+  width:24px;height:24px;border-radius:7px;
   background:var(--purple);color:#fff;
   cursor:grab;align-items:center;justify-content:center;
-  font-size:11px;box-shadow:var(--shadow);
+  font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.2);
   user-select:none;
 }
-.island-handle:active { cursor:grabbing; }
-.god-active .island-wrapper:hover .island-handle { display:flex; }
+.gm-handle:active { cursor:grabbing; }
+body.god-active .gm-island:hover .gm-handle { display:flex; }
 
 /* Resize grip */
-.island-resize {
-  display:none;position:absolute;bottom:4px;right:4px;z-index:10;
-  width:16px;height:16px;cursor:se-resize;
+.gm-resize {
+  display:none;position:absolute;bottom:5px;right:5px;z-index:20;
+  width:14px;height:14px;cursor:se-resize;
   border-right:3px solid var(--purple);border-bottom:3px solid var(--purple);
-  border-radius:0 0 4px 0;opacity:.7;
+  border-radius:0 0 3px 0;opacity:.8;
 }
-.god-active .island-wrapper:hover .island-resize { display:block; }
+body.god-active .gm-island:hover .gm-resize { display:block; }
 
-/* Island label badge */
-.island-label {
-  display:none;position:absolute;top:6px;right:6px;z-index:10;
-  font-size:9px;padding:2px 7px;border-radius:99px;
-  background:rgba(127,119,221,0.15);color:var(--purple);
+/* Island label */
+.gm-label {
+  display:none;position:absolute;top:7px;right:7px;z-index:20;
+  font-size:9px;padding:2px 8px;border-radius:99px;
+  background:rgba(127,119,221,0.18);color:var(--purple);
   font-weight:700;letter-spacing:.05em;text-transform:uppercase;
   pointer-events:none;
 }
-.god-active .island-wrapper:hover .island-label { display:block; }
+body.god-active .gm-island:hover .gm-label { display:block; }
 
-/* ── Grid canvas (god mode bg) ── */
-.god-grid-canvas {
-  position:fixed;inset:0;pointer-events:none;z-index:1;
-  opacity:0;transition:opacity .3s;
-}
-.god-active .god-grid-canvas { opacity:1; }
-
-/* ── Auto-fill grid layouts (default, no explicit positions) ── */
-.island-grid {
+/* Tab grid layout */
+.gm-grid {
   display:grid;
   grid-template-columns:repeat(24,1fr);
   gap:14px;
   align-items:start;
+  grid-auto-flow:dense;
 }
 
-/* ── Cash flow calendar ── */
+/* Cash flow calendar */
+.cf-cal-outer { margin-bottom:0; }
 .cf-cal-grid {
   display:grid;
   grid-template-columns:repeat(7,1fr);
-  gap:4px;
-  margin-bottom:14px;
+  gap:3px;
 }
-.cf-cal-day {
-  min-height:64px;border-radius:8px;
-  border:1px solid var(--border2);
-  background:var(--surface2);
-  padding:5px 6px;cursor:pointer;
-  transition:all .15s;position:relative;
-}
-.cf-cal-day:hover { border-color:var(--accent);background:var(--accent-light); }
-.cf-cal-day.today {
-  border-color:var(--accent);
-  background:var(--accent-light);
-  box-shadow:0 0 0 2px rgba(29,158,117,0.2);
-}
-.cf-cal-day.has-income { border-left:3px solid var(--accent); }
-.cf-cal-day.has-expense { border-left:3px solid var(--danger); }
-.cf-cal-day.has-both {
-  border-left:3px solid transparent;
-  border-image:linear-gradient(var(--accent),var(--danger)) 1;
-}
-.cf-cal-day-num {
-  font-size:11px;font-weight:700;color:var(--text2);margin-bottom:4px;
-}
-.cf-cal-day.today .cf-cal-day-num { color:var(--accent); }
-.cf-cal-pill {
-  font-size:9px;padding:1px 5px;border-radius:4px;
-  margin-bottom:2px;display:block;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-weight:500;
-}
-.cf-cal-pill.income { background:var(--accent-light);color:var(--accent-dark); }
-.cf-cal-pill.expense { background:var(--danger-light);color:var(--danger); }
-.cf-cal-more {
-  font-size:9px;color:var(--text3);margin-top:1px;
-}
-.cf-day-header {
-  text-align:center;font-size:10px;font-weight:700;
+.cf-day-hdr {
+  text-align:center;font-size:9px;font-weight:700;
   color:var(--text3);text-transform:uppercase;
-  letter-spacing:.06em;padding:4px 0;
+  letter-spacing:.06em;padding:3px 0 5px;
 }
-.cf-detail-panel {
+.cf-day {
+  min-height:62px;border-radius:7px;
+  border:1px solid var(--border2);background:var(--surface2);
+  padding:5px 5px 4px;cursor:pointer;transition:all .15s;
+  position:relative;overflow:hidden;
+}
+.cf-day:hover { border-color:var(--accent);background:var(--accent-light); }
+.cf-day.today {
+  border-color:var(--accent);background:var(--accent-light);
+  box-shadow:0 0 0 2px rgba(29,158,117,0.18);
+}
+.cf-day.active-day { outline:2px solid var(--accent); }
+.cf-day.has-inc  { border-left:3px solid var(--accent); }
+.cf-day.has-exp  { border-left:3px solid var(--danger); }
+.cf-day.has-both { border-left:3px solid var(--purple); }
+.cf-day-num {
+  font-size:10px;font-weight:700;color:var(--text2);margin-bottom:3px;
+}
+.cf-day.today .cf-day-num { color:var(--accent);font-size:11px; }
+.cf-pill {
+  font-size:8px;padding:1px 4px;border-radius:3px;
+  margin-bottom:1px;display:block;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-weight:600;line-height:1.4;
+}
+.cf-pill.inc { background:var(--accent-light);color:var(--accent-dark); }
+.cf-pill.exp { background:var(--danger-light);color:var(--danger); }
+.cf-more { font-size:8px;color:var(--text3);margin-top:1px; }
+.cf-detail {
   background:var(--surface);border:1px solid var(--border);
   border-radius:var(--radius-lg);padding:14px;
-  margin-bottom:14px;display:none;
+  margin-top:12px;display:none;
 }
-.cf-detail-panel.open { display:block; }
+.cf-detail.open { display:block; }
 .cf-detail-item {
-  display:flex;align-items:center;gap:8px;
-  padding:8px 10px;border-radius:var(--radius);
-  background:var(--surface2);margin-bottom:6px;
-  font-size:12px;
+  display:flex;align-items:center;gap:8px;padding:8px 10px;
+  border-radius:var(--radius);background:var(--surface2);
+  margin-bottom:6px;font-size:12px;
 }
-.cf-mark-paid {
+.cf-mark {
   margin-left:auto;font-size:10px;padding:2px 8px;
   border-radius:99px;border:1px solid var(--border);
-  background:none;color:var(--text2);cursor:pointer;
-  font-family:inherit;transition:all .15s;
+  background:none;color:var(--text2);cursor:pointer;font-family:inherit;
+  transition:all .15s;flex-shrink:0;
 }
-.cf-mark-paid:hover { background:var(--accent-light);color:var(--accent);border-color:var(--accent); }
-.cf-mark-paid.paid { background:var(--accent-light);color:var(--accent);border-color:var(--accent); }
+.cf-mark:hover,.cf-mark.paid {
+  background:var(--accent-light);color:var(--accent);border-color:var(--accent);
+}
+.cf-legend {
+  display:flex;gap:14px;flex-wrap:wrap;font-size:10px;
+  color:var(--text2);padding-top:10px;border-top:1px solid var(--border2);
+  margin-top:10px;
+}
+.cf-legend-dot {
+  display:inline-block;width:10px;height:10px;
+  border-radius:2px;margin-right:4px;vertical-align:middle;
+}
 
-/* ── History bank delete ── */
-.bank-delete-btn {
-  width:22px;height:22px;border-radius:99px;border:none;
+/* History bank delete button */
+.bank-x {
+  width:20px;height:20px;border-radius:99px;border:none;
   background:var(--danger-light);color:var(--danger);
-  cursor:pointer;display:flex;align-items:center;
-  justify-content:center;font-size:11px;flex-shrink:0;
-  transition:all .15s;
+  cursor:pointer;display:inline-flex;align-items:center;
+  justify-content:center;font-size:10px;flex-shrink:0;
+  transition:all .15s;margin-left:4px;font-family:inherit;
 }
-.bank-delete-btn:hover { background:var(--danger);color:#fff; }
+.bank-x:hover { background:var(--danger);color:#fff; }
 
-/* ── Responsive: no god mode on mobile ── */
+/* Mobile: disable god mode */
 @media(max-width:900px){
-  .god-mode-btn { display:none; }
-  .island-grid { display:block; }
+  .god-btn { display:none !important; }
+  .gm-grid { display:block !important; }
+  .gm-handle,.gm-resize { display:none !important; }
 }
   `;
   document.head.appendChild(s);
 }
 
-// ─── WRAP ISLANDS ───────────────────────────────────────────────
-// Wraps each known island element in a div.island-wrapper
-function wrapIslands() {
-  Object.entries(ISLAND_DEFAULTS).forEach(([tabId, islands]) => {
+// ═══════════════════════════════════════════════════════════════
+// STEP 3 — WRAP ISLANDS & BUILD GRIDS
+// ═══════════════════════════════════════════════════════════════
+function buildTabGrids() {
+  Object.entries(TAB_ISLANDS).forEach(([tabId, islands]) => {
+    const tabEl = document.getElementById('tab-' + tabId);
+    if (!tabEl) return;
+
+    // Create or find the grid container
+    let grid = document.getElementById('gm-grid-' + tabId);
+    if (!grid) {
+      grid = document.createElement('div');
+      grid.className = 'gm-grid';
+      grid.id = 'gm-grid-' + tabId;
+      // Move all direct children of tab into grid
+      Array.from(tabEl.children).forEach(c => grid.appendChild(c));
+      tabEl.appendChild(grid);
+    }
+
     islands.forEach(def => {
       const el = document.getElementById(def.id);
-      if (!el || el.closest('.island-wrapper')) return;
-      const wrapper = document.createElement('div');
-      wrapper.className = 'island-wrapper';
-      wrapper.dataset.island = def.id;
-      wrapper.dataset.tab = tabId;
-      // drag handle
-      const handle = document.createElement('div');
-      handle.className = 'island-handle';
-      handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
-      handle.title = 'Drag to move';
-      // resize grip
-      const grip = document.createElement('div');
-      grip.className = 'island-resize';
-      grip.title = 'Drag to resize';
-      // label
-      const label = document.createElement('div');
-      label.className = 'island-label';
-      label.textContent = def.label;
-      // wrap
-      el.parentNode.insertBefore(wrapper, el);
-      wrapper.appendChild(el);
-      wrapper.appendChild(handle);
-      wrapper.appendChild(grip);
-      wrapper.appendChild(label);
+      if (!el) return;
+
+      // Wrap in island div if not already
+      let wrapper = el.closest('.gm-island');
+      if (!wrapper) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'gm-island';
+        wrapper.dataset.islandId  = def.id;
+        wrapper.dataset.islandTab = tabId;
+        el.parentNode.insertBefore(wrapper, el);
+        wrapper.appendChild(el);
+        // Controls
+        const handle = document.createElement('div');
+        handle.className = 'gm-handle';
+        handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
+        handle.title = 'Drag to move';
+        const grip = document.createElement('div');
+        grip.className = 'gm-resize';
+        grip.title = 'Drag corner to resize';
+        const label = document.createElement('div');
+        label.className = 'gm-label';
+        label.textContent = def.label;
+        wrapper.appendChild(handle);
+        wrapper.appendChild(grip);
+        wrapper.appendChild(label);
+      }
+
+      // Move wrapper into grid if not there
+      if (wrapper.parentElement !== grid) grid.appendChild(wrapper);
+
+      // Apply grid position
+      applyPos(wrapper, tabId, def);
     });
   });
-  // Also wrap existing two-col/chart-card combos on dashboard into island grid
-  rebuildDashboardGrid();
 }
 
-// ─── REBUILD DASHBOARD GRID (gravity fill) ──────────────────────
-function rebuildDashboardGrid() {
-  const tab = document.getElementById('tab-dashboard');
-  if (!tab) return;
-  // Create island grid container if not exists
-  let grid = tab.querySelector('.island-grid#dash-island-grid');
-  if (!grid) {
-    grid = document.createElement('div');
-    grid.className = 'island-grid';
-    grid.id = 'dash-island-grid';
-    tab.appendChild(grid);
-  }
-  // Move two-col and standalone cards into grid with CSS grid-column spans
-  applyDefaultGridPositions('dashboard', grid);
+function applyPos(wrapper, tabId, def) {
+  const saved = (layoutConfig[tabId] || {})[def.id];
+  const p = saved || def;
+  wrapper.style.gridColumn = `${p.col} / span ${p.w}`;
+  wrapper.style.gridRow    = `${p.row} / span ${p.h}`;
+  if (p.h > 1) wrapper.style.minHeight = (p.h * GRID_ROW_H) + 'px';
 }
 
-// ─── APPLY GRID POSITIONS ───────────────────────────────────────
-function applyDefaultGridPositions(tabId, container) {
-  const islands = ISLAND_DEFAULTS[tabId];
-  if (!islands || !container) return;
-  const saved = layoutConfig[tabId] || {};
-  islands.forEach(def => {
-    const wrapper = document.querySelector(`.island-wrapper[data-island="${def.id}"]`);
-    if (!wrapper) return;
-    const pos = saved[def.id] || def;
-    const col = pos.col || def.col;
-    const row = pos.row || def.row;
-    const w   = pos.w   || def.w;
-    const h   = pos.h   || def.h;
-    wrapper.style.gridColumn = `${col} / span ${w}`;
-    wrapper.style.gridRow    = `${row} / span ${h}`;
-    if (h > 1) wrapper.style.minHeight = (h * GRID_ROW_H) + 'px';
-    // Move into grid container if not already there
-    if (wrapper.parentElement !== container) {
-      container.appendChild(wrapper);
-    }
-  });
-}
-
-// ─── GOD MODE TOGGLE ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// STEP 4 — GOD MODE TOGGLE
+// ═══════════════════════════════════════════════════════════════
 function toggleGodMode() {
   godMode = !godMode;
-  const btn = document.getElementById('god-mode-btn');
-  const bar = document.getElementById('god-bar');
-  const canvas = document.getElementById('god-grid-canvas');
   document.body.classList.toggle('god-active', godMode);
+  const btn = document.getElementById('god-btn');
   if (btn) {
     btn.classList.toggle('active', godMode);
     btn.innerHTML = godMode
-      ? '<i class="ti ti-lock-open"></i> God mode ON'
+      ? '<i class="ti ti-lock-open"></i> God mode'
       : '<i class="ti ti-adjustments"></i> Configure';
   }
+  const bar = document.getElementById('god-bar');
   if (bar) bar.classList.toggle('visible', godMode);
+
   if (godMode) {
-    drawGridCanvas();
-    attachDragListeners();
+    drawDotGrid();
+    bindDrag();
   } else {
-    if (canvas) canvas.style.opacity = '0';
-    detachDragListeners();
-    saveLayoutConfig();
+    const c = document.getElementById('god-dot-canvas');
+    if (c) c.style.opacity = '0';
+    unbindDrag();
+    persistLayout();
   }
 }
+window.toggleGodMode = toggleGodMode;
 
-// ─── GRID CANVAS (subtle dot grid overlay) ──────────────────────
-function drawGridCanvas() {
-  let canvas = document.getElementById('god-grid-canvas');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    canvas.id = 'god-grid-canvas';
-    canvas.className = 'god-grid-canvas';
-    document.body.appendChild(canvas);
+function drawDotGrid() {
+  let cv = document.getElementById('god-dot-canvas');
+  if (!cv) {
+    cv = document.createElement('canvas');
+    cv.id = 'god-dot-canvas';
+    document.body.appendChild(cv);
   }
-  canvas.width  = window.innerWidth;
-  canvas.height = document.body.scrollHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const colW = canvas.width / GRID_COLS;
-  ctx.fillStyle = 'rgba(127,119,221,0.12)';
+  cv.width  = window.innerWidth;
+  cv.height = Math.max(document.body.scrollHeight, window.innerHeight);
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const cw = cv.width / GRID_COLS;
+  ctx.fillStyle = 'rgba(127,119,221,0.15)';
   for (let c = 0; c <= GRID_COLS; c++) {
-    for (let r = 0; r * GRID_ROW_H < canvas.height; r++) {
+    for (let r = 0; r * GRID_ROW_H < cv.height + GRID_ROW_H; r++) {
       ctx.beginPath();
-      ctx.arc(c * colW, r * GRID_ROW_H, 1.5, 0, Math.PI * 2);
+      ctx.arc(c * cw, r * GRID_ROW_H, 1.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  canvas.style.opacity = '1';
+  cv.style.opacity = '1';
 }
 
-// ─── DRAG AND DROP ──────────────────────────────────────────────
-function attachDragListeners() {
-  document.querySelectorAll('.island-handle').forEach(handle => {
-    handle.addEventListener('mousedown', onDragStart);
-    handle.addEventListener('touchstart', onDragStart, { passive: true });
+// ═══════════════════════════════════════════════════════════════
+// STEP 5 — DRAG (absolute positioning during drag, snap on drop)
+// ═══════════════════════════════════════════════════════════════
+function bindDrag() {
+  document.querySelectorAll('.gm-handle').forEach(h => {
+    h.addEventListener('mousedown', startDrag);
+    h.addEventListener('touchstart', startDrag, { passive: false });
   });
-  document.querySelectorAll('.island-resize').forEach(grip => {
-    grip.addEventListener('mousedown', onResizeStart);
+  document.querySelectorAll('.gm-resize').forEach(g => {
+    g.addEventListener('mousedown', startResize);
+  });
+}
+function unbindDrag() {
+  document.querySelectorAll('.gm-handle').forEach(h => {
+    h.removeEventListener('mousedown', startDrag);
+    h.removeEventListener('touchstart', startDrag);
+  });
+  document.querySelectorAll('.gm-resize').forEach(g => {
+    g.removeEventListener('mousedown', startResize);
   });
 }
 
-function detachDragListeners() {
-  document.querySelectorAll('.island-handle').forEach(h => {
-    h.removeEventListener('mousedown', onDragStart);
-    h.removeEventListener('touchstart', onDragStart);
-  });
-  document.querySelectorAll('.island-resize').forEach(g => {
-    g.removeEventListener('mousedown', onResizeStart);
-  });
-}
-
-function onDragStart(e) {
-  const wrapper = e.currentTarget.closest('.island-wrapper');
+function startDrag(e) {
+  if (!godMode) return;
+  e.preventDefault();
+  const wrapper = e.currentTarget.closest('.gm-island');
   if (!wrapper) return;
-  e.preventDefault();
-  wrapper.classList.add('dragging');
-  dragState = {
-    wrapper,
-    startX: (e.touches ? e.touches[0].clientX : e.clientX),
-    startY: (e.touches ? e.touches[0].clientY : e.clientY),
-    origHTML: null,
-    placeholder: createPlaceholder(wrapper),
-  };
-  wrapper.parentNode.insertBefore(dragState.placeholder, wrapper.nextSibling);
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup', onDragEnd);
-  document.addEventListener('touchmove', onDragMove, { passive: false });
-  document.addEventListener('touchend', onDragEnd);
-}
-
-function createPlaceholder(wrapper) {
-  const ph = document.createElement('div');
-  ph.className = 'island-placeholder';
-  ph.style.cssText = `
-    grid-column:${wrapper.style.gridColumn};
-    grid-row:${wrapper.style.gridRow};
-    background:rgba(127,119,221,0.08);
-    border:2px dashed rgba(127,119,221,0.3);
-    border-radius:var(--radius-lg);
-    min-height:${wrapper.offsetHeight}px;
-  `;
-  return ph;
-}
-
-function onDragMove(e) {
-  if (!dragState) return;
-  e.preventDefault();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  // Snap to grid
-  const grid = dragState.wrapper.parentElement;
+  const grid = wrapper.closest('.gm-grid');
   if (!grid) return;
   const gridRect = grid.getBoundingClientRect();
-  const colW = gridRect.width / GRID_COLS;
-  const newCol = Math.max(1, Math.min(GRID_COLS, Math.round((clientX - gridRect.left) / colW) + 1));
-  const scrollTop = window.scrollY;
-  const newRow = Math.max(1, Math.round((clientY + scrollTop - gridRect.top - scrollTop) / GRID_ROW_H) + 1);
-  // Get current span
-  const currentSpan = parseGridSpan(dragState.wrapper.style.gridColumn);
-  const currentRowSpan = parseGridSpan(dragState.wrapper.style.gridRow);
-  const endCol = Math.min(GRID_COLS + 1, newCol + currentSpan);
-  dragState.wrapper.style.gridColumn = `${newCol} / span ${Math.min(currentSpan, GRID_COLS - newCol + 1)}`;
-  dragState.wrapper.style.gridRow    = `${newRow} / span ${currentRowSpan}`;
-  // Visual feedback
-  document.querySelectorAll('.island-wrapper').forEach(w => {
-    if (w !== dragState.wrapper) w.classList.remove('drag-over');
-  });
+  const wRect    = wrapper.getBoundingClientRect();
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+
+  wrapper.classList.add('is-dragging');
+  dragState = {
+    wrapper, grid, gridRect,
+    offsetX: cx - wRect.left,
+    offsetY: cy - wRect.top,
+    origCol: parseStart(wrapper.style.gridColumn),
+    origRow: parseStart(wrapper.style.gridRow),
+    origW:   parseSpan(wrapper.style.gridColumn),
+    origH:   parseSpan(wrapper.style.gridRow),
+  };
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup',   endDrag);
+  document.addEventListener('touchmove', onDrag,  { passive: false });
+  document.addEventListener('touchend',  endDrag);
 }
 
-function onDragEnd(e) {
+function onDrag(e) {
   if (!dragState) return;
-  dragState.wrapper.classList.remove('dragging');
-  if (dragState.placeholder) dragState.placeholder.remove();
-  // Save new position
-  const islandId = dragState.wrapper.dataset.island;
-  const tabId = dragState.wrapper.dataset.tab;
-  if (islandId && tabId) {
-    if (!layoutConfig[tabId]) layoutConfig[tabId] = {};
-    const col = parseGridStart(dragState.wrapper.style.gridColumn);
-    const row = parseGridStart(dragState.wrapper.style.gridRow);
-    const w   = parseGridSpan(dragState.wrapper.style.gridColumn);
-    const h   = parseGridSpan(dragState.wrapper.style.gridRow);
-    layoutConfig[tabId][islandId] = { col, row, w, h };
-  }
-  document.removeEventListener('mousemove', onDragMove);
-  document.removeEventListener('mouseup', onDragEnd);
-  document.removeEventListener('touchmove', onDragMove);
-  document.removeEventListener('touchend', onDragEnd);
+  e.preventDefault();
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  const { wrapper, grid, offsetX, offsetY, origW, origH } = dragState;
+  const gridRect = grid.getBoundingClientRect();
+  const cw = gridRect.width / GRID_COLS;
+  // Where the top-left of the island would land
+  const relX = cx - offsetX - gridRect.left + grid.scrollLeft;
+  const relY = cy - offsetY - gridRect.top  + window.scrollY;
+  let newCol = Math.max(1, Math.min(GRID_COLS - origW + 1, Math.round(relX / cw) + 1));
+  let newRow = Math.max(1, Math.round(relY / GRID_ROW_H) + 1);
+  wrapper.style.gridColumn = `${newCol} / span ${origW}`;
+  wrapper.style.gridRow    = `${newRow} / span ${origH}`;
+}
+
+function endDrag(e) {
+  if (!dragState) return;
+  const { wrapper } = dragState;
+  wrapper.classList.remove('is-dragging');
+  saveIslandPos(wrapper);
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup',   endDrag);
+  document.removeEventListener('touchmove', onDrag);
+  document.removeEventListener('touchend',  endDrag);
   dragState = null;
 }
 
-// ─── RESIZE ─────────────────────────────────────────────────────
-function onResizeStart(e) {
-  const wrapper = e.currentTarget.closest('.island-wrapper');
-  if (!wrapper) return;
+function startResize(e) {
+  if (!godMode) return;
   e.preventDefault();
-  resizeState = {
-    wrapper,
-    startX: e.clientX,
-    startY: e.clientY,
-    startW: parseGridSpan(wrapper.style.gridColumn),
-    startH: parseGridSpan(wrapper.style.gridRow),
-  };
-  document.addEventListener('mousemove', onResizeMove);
-  document.addEventListener('mouseup', onResizeEnd);
-}
-
-function onResizeMove(e) {
-  if (!resizeState) return;
-  const grid = resizeState.wrapper.parentElement;
+  const wrapper = e.currentTarget.closest('.gm-island');
+  if (!wrapper) return;
+  const grid = wrapper.closest('.gm-grid');
   if (!grid) return;
-  const gridRect = grid.getBoundingClientRect();
-  const colW = gridRect.width / GRID_COLS;
-  const dx = e.clientX - resizeState.startX;
-  const dy = e.clientY - resizeState.startY;
-  const newW = Math.max(4, Math.min(GRID_COLS, resizeState.startW + Math.round(dx / colW)));
-  const newH = Math.max(1, resizeState.startH + Math.round(dy / GRID_ROW_H));
-  const startCol = parseGridStart(resizeState.wrapper.style.gridColumn);
-  resizeState.wrapper.style.gridColumn = `${startCol} / span ${newW}`;
-  resizeState.wrapper.style.gridRow    = `${parseGridStart(resizeState.wrapper.style.gridRow)} / span ${newH}`;
-  resizeState.wrapper.style.minHeight  = (newH * GRID_ROW_H) + 'px';
+  resizeState = {
+    wrapper, grid,
+    startX: e.clientX, startY: e.clientY,
+    startW: parseSpan(wrapper.style.gridColumn),
+    startH: parseSpan(wrapper.style.gridRow),
+    startCol: parseStart(wrapper.style.gridColumn),
+    startRow: parseStart(wrapper.style.gridRow),
+  };
+  document.addEventListener('mousemove', onResize);
+  document.addEventListener('mouseup',   endResize);
 }
 
-function onResizeEnd(e) {
+function onResize(e) {
   if (!resizeState) return;
-  const islandId = resizeState.wrapper.dataset.island;
-  const tabId    = resizeState.wrapper.dataset.tab;
-  if (islandId && tabId) {
-    if (!layoutConfig[tabId]) layoutConfig[tabId] = {};
-    layoutConfig[tabId][islandId] = {
-      col: parseGridStart(resizeState.wrapper.style.gridColumn),
-      row: parseGridStart(resizeState.wrapper.style.gridRow),
-      w:   parseGridSpan(resizeState.wrapper.style.gridColumn),
-      h:   parseGridSpan(resizeState.wrapper.style.gridRow),
-    };
-  }
-  document.removeEventListener('mousemove', onResizeMove);
-  document.removeEventListener('mouseup', onResizeEnd);
+  const { wrapper, grid, startX, startY, startW, startH, startCol, startRow } = resizeState;
+  const gridRect = grid.getBoundingClientRect();
+  const cw = gridRect.width / GRID_COLS;
+  const dx = e.clientX - startX;
+  const dy = e.clientY - startY;
+  const newW = Math.max(3, Math.min(GRID_COLS - startCol + 1, startW + Math.round(dx / cw)));
+  const newH = Math.max(1, startH + Math.round(dy / GRID_ROW_H));
+  wrapper.style.gridColumn = `${startCol} / span ${newW}`;
+  wrapper.style.gridRow    = `${startRow} / span ${newH}`;
+  wrapper.style.minHeight  = (newH * GRID_ROW_H) + 'px';
+}
+
+function endResize(e) {
+  if (!resizeState) return;
+  saveIslandPos(resizeState.wrapper);
+  document.removeEventListener('mousemove', onResize);
+  document.removeEventListener('mouseup',   endResize);
   resizeState = null;
 }
 
-// ─── GRID PARSE HELPERS ─────────────────────────────────────────
-function parseGridStart(val) {
-  if (!val) return 1;
-  const m = val.match(/^(\d+)/);
-  return m ? +m[1] : 1;
-}
-function parseGridSpan(val) {
-  if (!val) return 1;
-  const m = val.match(/span\s+(\d+)/);
-  return m ? +m[1] : 1;
-}
-
-// ─── SAVE / LOAD LAYOUT ─────────────────────────────────────────
-function saveLayoutConfig() {
-  try {
-    localStorage.setItem(GOD_STORAGE_KEY, JSON.stringify(layoutConfig));
-  } catch(e) {}
-  // Also inject into main state if available
-  if (typeof captureState === 'function' && typeof markDirty === 'function') {
-    // Hook into existing state system
-    const origCapture = captureState;
-    window._patchLayoutInjected = true;
-  }
-  // Inject layoutConfig into window so main state picks it up
-  window.__LAYOUT_CONFIG__ = layoutConfig;
+function saveIslandPos(wrapper) {
+  const id  = wrapper.dataset.islandId;
+  const tab = wrapper.dataset.islandTab;
+  if (!id || !tab) return;
+  if (!layoutConfig[tab]) layoutConfig[tab] = {};
+  layoutConfig[tab][id] = {
+    col: parseStart(wrapper.style.gridColumn),
+    row: parseStart(wrapper.style.gridRow),
+    w:   parseSpan(wrapper.style.gridColumn),
+    h:   parseSpan(wrapper.style.gridRow),
+  };
 }
 
-function loadLayoutConfig() {
-  // Priority 1: from __BP_STATE__ (baked into HTML)
-  if (window.__BP_STATE__ && window.__BP_STATE__.layoutConfig) {
-    layoutConfig = window.__BP_STATE__.layoutConfig;
-    return;
+// ─── helpers ────────────────────────────────────────────────────
+function parseStart(v) { const m = (v||'').match(/^(\d+)/);   return m ? +m[1] : 1; }
+function parseSpan(v)  { const m = (v||'').match(/span\s+(\d+)/); return m ? +m[1] : 1; }
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 6 — PERSIST & LOAD LAYOUT
+// ═══════════════════════════════════════════════════════════════
+function persistLayout() {
+  try { localStorage.setItem(LS_LAYOUT, JSON.stringify(layoutConfig)); } catch(e) {}
+  if (window.__LAYOUT_CONFIG__ !== undefined) window.__LAYOUT_CONFIG__ = layoutConfig;
+  // Inject into main captureState if available
+  if (typeof window.markDirty === 'function') window.markDirty();
+}
+
+function loadLayout() {
+  // 1. From baked __BP_STATE__
+  if (window.__BP_STATE__?.layoutConfig) {
+    layoutConfig = window.__BP_STATE__.layoutConfig; return;
   }
-  // Priority 2: localStorage
+  // 2. From localStorage
   try {
-    const raw = localStorage.getItem(GOD_STORAGE_KEY);
+    const raw = localStorage.getItem(LS_LAYOUT);
     if (raw) { layoutConfig = JSON.parse(raw); return; }
   } catch(e) {}
   layoutConfig = {};
 }
 
-// ─── RESET LAYOUT ───────────────────────────────────────────────
 function resetLayout() {
-  if (!confirm('Reset layout to defaults for all tabs?')) return;
+  if (!confirm('Reset all layouts to defaults?')) return;
   layoutConfig = {};
-  saveLayoutConfig();
-  // Reapply defaults
-  Object.entries(ISLAND_DEFAULTS).forEach(([tabId]) => {
-    const grid = document.getElementById(tabId + '-island-grid') ||
-                 document.querySelector(`#tab-${tabId} .island-grid`);
-    if (grid) applyDefaultGridPositions(tabId, grid);
-  });
-  alert('Layout reset to defaults.');
+  try { localStorage.removeItem(LS_LAYOUT); } catch(e) {}
+  buildTabGrids();
+  alert('Layout reset.');
 }
+window.resetLayout = resetLayout;
 
-// ─── INJECT GOD MODE BUTTON ─────────────────────────────────────
-function injectGodButton() {
+// ═══════════════════════════════════════════════════════════════
+// STEP 7 — INJECT GOD BUTTON + BAR
+// ═══════════════════════════════════════════════════════════════
+function injectGodUI() {
+  if (document.getElementById('god-btn')) return;
   const navRight = document.querySelector('.nav-right');
-  if (!navRight || document.getElementById('god-mode-btn')) return;
+  if (!navRight) return;
   const btn = document.createElement('button');
-  btn.id = 'god-mode-btn';
-  btn.className = 'god-mode-btn';
+  btn.id = 'god-btn';
+  btn.className = 'god-btn';
   btn.innerHTML = '<i class="ti ti-adjustments"></i> Configure';
   btn.onclick = toggleGodMode;
-  btn.title = 'God mode — drag, resize and arrange islands';
   navRight.insertBefore(btn, navRight.firstChild);
-  // Floating god bar
+
   const bar = document.createElement('div');
   bar.id = 'god-bar';
   bar.className = 'god-bar';
   bar.innerHTML = `
-    <div class="god-bar-dot"></div>
-    <span style="font-weight:600;color:var(--purple);">God mode</span>
-    <span style="color:var(--text3);">Drag handles to move · Corner grip to resize</span>
-    <button class="btn btn-sm" onclick="resetLayout()" style="border-color:var(--border);">
+    <div class="god-pulse"></div>
+    <span style="font-weight:700;color:var(--purple);">God mode</span>
+    <span>Drag <i class="ti ti-grip-vertical" style="font-size:10px;"></i> to move &nbsp;·&nbsp; Corner grip to resize</span>
+    <button class="btn btn-sm" style="border-radius:99px;" onclick="resetLayout()">
       <i class="ti ti-refresh"></i> Reset
     </button>
-    <button class="btn btn-sm btn-accent" onclick="toggleGodMode()">
+    <button class="btn btn-sm btn-accent" style="border-radius:99px;" onclick="toggleGodMode()">
       <i class="ti ti-check"></i> Save &amp; exit
-    </button>
-  `;
+    </button>`;
   document.body.appendChild(bar);
-  window.resetLayout = resetLayout;
-  window.toggleGodMode = toggleGodMode;
 }
 
-// ─── ISLAND GRID SCAFFOLDING PER TAB ────────────────────────────
-function scaffoldTabGrids() {
-  const tabs = Object.keys(ISLAND_DEFAULTS).filter(t => t !== 'dashboard');
-  tabs.forEach(tabId => {
-    const tabEl = document.getElementById('tab-' + tabId);
-    if (!tabEl) return;
-    let grid = tabEl.querySelector('.island-grid');
-    if (!grid) {
-      grid = document.createElement('div');
-      grid.className = 'island-grid';
-      grid.id = tabId + '-island-grid';
-      // Move all direct children into grid
-      Array.from(tabEl.children).forEach(child => grid.appendChild(child));
-      tabEl.appendChild(grid);
-    }
-    applyDefaultGridPositions(tabId, grid);
-  });
-}
+// ═══════════════════════════════════════════════════════════════
+// STEP 8 — CASH FLOW CALENDAR (replaces old timeline)
+// ═══════════════════════════════════════════════════════════════
+function buildCashFlowCalendar() {
+  const cfTab = document.getElementById('tab-cashflow');
+  if (!cfTab || cfTab.dataset.calBuilt) return;
+  cfTab.dataset.calBuilt = '1';
 
-// ─── CASH FLOW CALENDAR (replaces old timeline) ──────────────────
-function renderCashFlowCalendar() {
-  const now = new Date();
-  const month = now.getMonth();
-  const year  = now.getFullYear();
+  const now         = new Date();
+  const month       = now.getMonth();
+  const year        = now.getFullYear();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
-  const today = now.getDate();
+  const firstDay    = new Date(year, month, 1).getDay();
+  const today       = now.getDate();
+  const MONTHS      = window.MONTHS || ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const DAYS        = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const fmtC        = window.fmtC  || (n => n);
+  const toM         = window.toMonthly || (v => v);
+  const fmt         = window.fmt   || (n => n);
+  const getTkey     = window.getTkey || ((m,y) => `${y}-${m}`);
+  const tkey        = getTkey(month, year);
 
-  // Build day→items map
+  // Build day → items map
   const dayMap = {};
-  // Access items from main scope
-  const allItems = window.items || [];
-  allItems.filter(i => i.on && i.dueDay > 0).forEach(item => {
+  (window.items || []).filter(i => i.on && i.dueDay > 0).forEach(item => {
     const d = item.dueDay;
     if (d < 1 || d > daysInMonth) return;
     if (!dayMap[d]) dayMap[d] = [];
     dayMap[d].push(item);
   });
 
-  // Calendar HTML
-  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  let html = `
-    <div class="card" style="margin-bottom:14px;">
+  // ── Calendar grid HTML ──
+  const dayHeaders = DAYS.map(d => `<div class="cf-day-hdr">${d}</div>`).join('');
+  const emptyCells = Array(firstDay).fill('<div></div>').join('');
+  const dayCells = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    const its = dayMap[day] || [];
+    const hasInc = its.some(x => x.type === 'income');
+    const hasExp = its.some(x => x.type === 'expense');
+    const cls = ['cf-day',
+      day === today ? 'today' : '',
+      hasInc && hasExp ? 'has-both' : hasInc ? 'has-inc' : hasExp ? 'has-exp' : ''
+    ].filter(Boolean).join(' ');
+    const pills = its.slice(0, 2).map(it =>
+      `<span class="cf-pill ${it.type === 'income' ? 'inc' : 'exp'}">
+        ${it.type === 'income' ? '↑' : '↓'} ${it.name}
+      </span>`).join('');
+    const more = its.length > 2 ? `<div class="cf-more">+${its.length - 2} more</div>` : '';
+    return `<div class="${cls}" data-day="${day}" onclick="cfDayClick(${day})">${
+      `<div class="cf-day-num">${day}</div>${pills}${more}`}</div>`;
+  }).join('');
+
+  // ── Replace old timeline card ──
+  let mainCard = document.getElementById('cf-main-card');
+  if (!mainCard) {
+    mainCard = cfTab.querySelector('.card');
+    if (mainCard) mainCard.id = 'cf-main-card';
+  }
+  if (mainCard) {
+    mainCard.innerHTML = `
       <div class="card-head">
         <span class="card-title">
           <i class="ti ti-calendar-month" style="color:var(--accent);margin-right:5px;"></i>
-          ${window.MONTHS ? window.MONTHS[month] : ''} ${year} — Cash flow
+          ${MONTHS[month]} ${year}
         </span>
-        <span id="cf-selected-label" style="font-size:11px;color:var(--text2);"></span>
+        <span id="cf-sel-label" style="font-size:11px;color:var(--text2);"></span>
       </div>
-      <div class="cf-cal-grid" style="margin-bottom:8px;">
-        ${DAYS.map(d => `<div class="cf-day-header">${d}</div>`).join('')}
-        ${Array(firstDay).fill('<div></div>').join('')}
-        ${Array.from({length: daysInMonth}, (_, i) => {
-          const day = i + 1;
-          const dayItems = dayMap[day] || [];
-          const hasInc  = dayItems.some(it => it.type === 'income');
-          const hasExp  = dayItems.some(it => it.type === 'expense');
-          const isToday = day === today;
-          const cls = [
-            'cf-cal-day',
-            isToday ? 'today' : '',
-            hasInc && hasExp ? 'has-both' : hasInc ? 'has-income' : hasExp ? 'has-expense' : ''
-          ].filter(Boolean).join(' ');
-          const pills = dayItems.slice(0, 2).map(it =>
-            `<span class="cf-cal-pill ${it.type}" title="${it.name}: ${window.fmtC ? window.fmtC(Math.round(window.toMonthly ? window.toMonthly(it.val, it.freq) : it.val)) : it.val}">
-              ${it.type === 'income' ? '↑' : '↓'} ${it.name}
-            </span>`
-          ).join('');
-          const more = dayItems.length > 2 ? `<div class="cf-cal-more">+${dayItems.length - 2} more</div>` : '';
-          return `<div class="${cls}" onclick="openCfDayDetail(${day})" data-day="${day}">${
-            '<div class="cf-cal-day-num">' + day + '</div>' + pills + more
-          }</div>`;
-        }).join('')}
+      <div class="cf-cal-grid" id="cf-cal-grid">
+        ${dayHeaders}${emptyCells}${dayCells}
       </div>
-      <div class="cf-detail-panel" id="cf-detail-panel"></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text2);padding-top:8px;border-top:1px solid var(--border2);">
-        <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:4px;"></span>Income due</span>
-        <span><span style="display:inline-block;width:10px;height:10px;background:var(--danger);border-radius:2px;margin-right:4px;"></span>Expense due</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-left:3px solid var(--accent);border-bottom:3px solid var(--danger);margin-right:4px;"></span>Both</span>
-      </div>
-    </div>`;
-
-  // Find the cashflow tab and replace content
-  const cfTab = document.getElementById('tab-cashflow');
-  if (!cfTab) return;
-
-  // Replace first card (old timeline) with calendar
-  const firstCard = cfTab.querySelector('.card');
-  if (firstCard) {
-    firstCard.outerHTML = html;
-  } else {
-    cfTab.insertAdjacentHTML('afterbegin', html);
+      <div class="cf-detail" id="cf-detail"></div>
+      <div class="cf-legend">
+        <span><span class="cf-legend-dot" style="background:var(--accent);"></span>Income due</span>
+        <span><span class="cf-legend-dot" style="background:var(--danger);"></span>Expense due</span>
+        <span><span class="cf-legend-dot" style="background:var(--purple);"></span>Both</span>
+      </div>`;
   }
 
-  // Expose day detail function globally
-  window.openCfDayDetail = function(day) {
-    const panel = document.getElementById('cf-detail-panel');
-    const label = document.getElementById('cf-selected-label');
-    if (!panel) return;
-    const dayItems = dayMap[day] || [];
-    // Highlight selected day
-    document.querySelectorAll('.cf-cal-day').forEach(el => el.classList.remove('selected'));
-    const selDay = document.querySelector(`.cf-cal-day[data-day="${day}"]`);
-    if (selDay) selDay.style.outline = '2px solid var(--accent)';
-    if (!dayItems.length) { panel.classList.remove('open'); if(label) label.textContent = ''; return; }
-    if (label) label.textContent = `Day ${day} — ${dayItems.length} item${dayItems.length > 1 ? 's' : ''}`;
-    const fmtC = window.fmtC || (n => n);
-    const toM  = window.toMonthly || (v => v);
-    const fmt  = window.fmt || (n => n);
-    const now  = new Date();
-    const tkey = window.getTkey ? window.getTkey(now.getMonth(), now.getFullYear()) : `${now.getFullYear()}-${now.getMonth()}`;
-    const td   = (window.trackerData && window.trackerData[tkey]) || {};
-    panel.classList.add('open');
-    panel.innerHTML = `
+  // ── Day click handler ──
+  window.cfDayClick = function(day) {
+    const its = dayMap[day] || [];
+    const lbl = document.getElementById('cf-sel-label');
+    const det = document.getElementById('cf-detail');
+    if (!det) return;
+    // Deselect old
+    document.querySelectorAll('.cf-day.active-day').forEach(d => d.classList.remove('active-day'));
+    const dayEl = document.querySelector(`.cf-day[data-day="${day}"]`);
+    if (dayEl) dayEl.classList.add('active-day');
+    if (!its.length) { det.classList.remove('open'); if(lbl) lbl.textContent=''; return; }
+    if (lbl) lbl.textContent = `Day ${day} — ${its.length} item${its.length > 1 ? 's' : ''}`;
+    const td = (window.trackerData && window.trackerData[tkey]) || {};
+    const getDays = window.getDaysUntil || (() => null);
+    det.classList.add('open');
+    det.innerHTML = `
       <div class="card-head" style="margin-bottom:10px;">
-        <span class="card-title">Day ${day} items</span>
-        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('cf-detail-panel').classList.remove('open');document.getElementById('cf-selected-label').textContent=''">✕</button>
+        <span class="card-title">Day ${day}</span>
+        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('cf-detail').classList.remove('open');document.getElementById('cf-sel-label').textContent=''">✕</button>
       </div>
-      ${dayItems.map(item => {
-        const mv   = Math.round(toM(item.val, item.freq));
-        const pKey = (item.type === 'income' ? 'inc_' : 'exp_') + item.id;
-        const paid = td[pKey] !== undefined && td[pKey] !== '';
-        const days = window.getDaysUntil ? window.getDaysUntil(item.dueDay) : null;
+      ${its.map(item => {
+        const mv  = Math.round(toM(item.val, item.freq));
+        const key = (item.type === 'income' ? 'inc_' : 'exp_') + item.id;
+        const paid = td[key] !== undefined && td[key] !== '';
+        const d   = getDays(item.dueDay);
+        const urgCls = d === 0 ? 'color:var(--danger)' : d !== null && d <= 3 ? 'color:var(--warning)' : 'color:var(--text3)';
+        const urgTxt = d === null ? '' : d === 0 ? 'TODAY' : d + 'd';
         return `<div class="cf-detail-item">
-          <div class="owner-dot ${item.owner || 'shared'}"></div>
+          <div class="owner-dot ${item.owner||'shared'}"></div>
           <div style="flex:1;">
             <div style="font-size:13px;font-weight:500;">${item.name}</div>
-            <div style="font-size:10px;color:var(--text2);">${item.type} · ${item.owner} · ${item.tag}</div>
+            <div style="font-size:10px;color:var(--text2);">${item.type} · ${item.owner||'shared'} · ${item.tag||''}</div>
           </div>
           <span style="font-size:14px;font-weight:700;color:${item.type==='income'?'var(--accent)':'var(--danger)'};">${fmtC(mv)}</span>
-          ${days !== null ? `<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${days===0?'var(--danger-light)':days<=3?'var(--warning-light)':'var(--surface3)'};color:${days===0?'var(--danger)':days<=3?'var(--warning)':'var(--text3)'};">${days===0?'TODAY':days+'d'}</span>` : ''}
-          <button class="cf-mark-paid ${paid ? 'paid' : ''}" onclick="markCfPaid('${item.id}','${item.type}','${tkey}',this,${mv})">
+          ${urgTxt ? `<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--surface3);${urgCls}">${urgTxt}</span>` : ''}
+          <button class="cf-mark ${paid?'paid':''}" onclick="cfMarkPaid('${item.id}','${item.type}','${tkey}',this,${mv})">
             ${paid ? '✓ Paid' : 'Mark paid'}
           </button>
         </div>`;
       }).join('')}`;
   };
 
-  window.markCfPaid = function(itemId, type, tkey, btn, val) {
+  window.cfMarkPaid = function(itemId, type, tkey, btn, val) {
     if (!window.trackerData) window.trackerData = {};
     if (!window.trackerData[tkey]) window.trackerData[tkey] = {};
     const key = (type === 'income' ? 'inc_' : 'exp_') + itemId;
-    if (btn.classList.contains('paid')) {
-      delete window.trackerData[tkey][key];
-      btn.classList.remove('paid');
-      btn.textContent = 'Mark paid';
-    } else {
-      window.trackerData[tkey][key] = val;
-      btn.classList.add('paid');
-      btn.textContent = '✓ Paid';
-    }
+    const wasPaid = btn.classList.contains('paid');
+    if (wasPaid) { delete window.trackerData[tkey][key]; btn.classList.remove('paid'); btn.textContent = 'Mark paid'; }
+    else { window.trackerData[tkey][key] = val; btn.classList.add('paid'); btn.textContent = '✓ Paid'; }
     if (typeof window.markDirty === 'function') window.markDirty();
   };
 }
 
-// ─── HISTORY BANK DELETE BUTTON ──────────────────────────────────
-function patchHistoryBank() {
-  // Patch the renderHistoryBank function to add delete buttons
-  const origRender = window.renderHistoryBank;
-  window.renderHistoryBank = function() {
-    origRender && origRender();
-    // Now add delete buttons to each bank item
-    const items = document.querySelectorAll('#history-bank-list .history-bank-item');
-    items.forEach(item => {
-      if (item.querySelector('.bank-delete-btn')) return; // already patched
-      const keyEl = item.querySelector('button[onclick*="openConflictModal"]');
-      const onclickAttr = keyEl ? keyEl.getAttribute('onclick') : '';
-      const keyMatch = onclickAttr.match(/openConflictModal\('([^']+)'\)/);
-      // Get month key from item content
-      const label = item.querySelector('span[style*="font-weight"]');
-      if (!label) return;
-      // Extract key from the inline text — find matching key in insightHistory
-      const labelText = label.textContent.trim();
-      let monthKey = null;
-      if (window.insightHistory) {
-        monthKey = Object.keys(window.insightHistory).find(k => {
-          const [y, m] = k.split('-');
-          const ms = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          return (ms[+m] + ' ' + y) === labelText;
-        });
-      }
-      if (keyMatch) monthKey = keyMatch[1];
-      if (!monthKey) return;
-      const delBtn = document.createElement('button');
-      delBtn.className = 'bank-delete-btn';
-      delBtn.innerHTML = '<i class="ti ti-x" style="font-size:10px;"></i>';
-      delBtn.title = 'Delete this month from bank';
-      delBtn.onclick = (e) => {
-        e.stopPropagation();
-        deleteHistoryBankMonth(monthKey);
-      };
-      item.appendChild(delBtn);
-    });
-  };
-
-  // Also override renderHistoryBank to build it with delete buttons inline
-  // by patching the HTML generation
-  window.deleteHistoryBankMonth = function(key) {
-    const [y, m] = key.split('-');
-    const ms = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const label = (ms[+m] || m) + ' ' + y;
-    if (!confirm(`Delete ${label} from History Bank?\n\nThis will also remove the tracker actuals for that month. This cannot be undone.`)) return;
-    // Remove from all stores
-    if (window.insightHistory) delete window.insightHistory[key];
-    if (window.pendingConflicts) delete window.pendingConflicts[key];
-    if (window.trackerData) delete window.trackerData[key];
-    if (window.monthHistory) delete window.monthHistory[key];
-    if (window.monthNotes) delete window.monthNotes[key];
-    if (typeof window.markDirty === 'function') window.markDirty();
-    if (typeof window.renderInsights === 'function') window.renderInsights();
-    if (typeof window.buildNotifications === 'function') window.buildNotifications();
-  };
-}
-
-// ─── PATCH CAPTURE STATE (inject layoutConfig) ──────────────────
-function patchCaptureState() {
-  const orig = window.captureState;
-  if (!orig) return;
-  window.captureState = function() {
-    const state = orig();
-    state.layoutConfig = layoutConfig;
-    return state;
-  };
-  const origApply = window.applyState;
-  if (!origApply) return;
-  window.applyState = function(s) {
-    origApply(s);
-    if (s && s.layoutConfig) {
-      layoutConfig = s.layoutConfig;
-    }
-  };
-}
-
-// ─── PATCH SHOW TAB (apply grid when switching) ──────────────────
+// Re-render calendar when switching to cashflow (items may have changed)
 function patchShowTab() {
   const orig = window.showTab;
-  if (!orig) return;
+  if (!orig || window._patchedShowTab) return;
+  window._patchedShowTab = true;
   window.showTab = function(t) {
     orig(t);
-    // Re-apply grid positions for this tab after render
-    setTimeout(() => {
-      const grid = document.getElementById(t + '-island-grid') ||
-                   document.querySelector(`#tab-${t} .island-grid`);
-      if (grid) applyDefaultGridPositions(t, grid);
-      // If on cashflow, rebuild calendar
-      if (t === 'cashflow') renderCashFlowCalendar();
-    }, 50);
-  };
-}
-
-// ─── HOOK INTO MAIN SITE MASTER DOWNLOAD (add Layout tab) ───────
-function patchSiteMasterDownload() {
-  const orig = window.downloadSiteMaster;
-  if (!orig) return;
-  window.downloadSiteMaster = async function() {
-    // Inject layout into state before download
-    window.__LAYOUT_CONFIG__ = layoutConfig;
-    // Call original — it will include layoutConfig via captureState
-    await orig();
-  };
-}
-
-// ─── INIT ────────────────────────────────────────────────────────
-function init() {
-  // Wait for main site init to complete
-  const ready = () => {
-    injectStyles();
-    loadLayoutConfig();
-    wrapIslands();
-    scaffoldTabGrids();
-    // Apply dashboard grid
-    const dashGrid = document.getElementById('dash-island-grid');
-    if (dashGrid) applyDefaultGridPositions('dashboard', dashGrid);
-    injectGodButton();
-    patchHistoryBank();
-    patchCaptureState();
-    patchShowTab();
-    patchSiteMasterDownload();
-    // Render cash flow calendar immediately if on cashflow tab
-    if (document.querySelector('#tab-cashflow.active')) renderCashFlowCalendar();
-    // Re-render history bank to get delete buttons
-    if (typeof window.renderHistoryBank === 'function') {
-      const origRender = window.renderHistoryBank;
+    if (t === 'cashflow') {
+      // Allow time for tab to become visible
       setTimeout(() => {
-        if (typeof origRender === 'function') window.renderHistoryBank();
-      }, 300);
+        const cfTab = document.getElementById('tab-cashflow');
+        if (cfTab) delete cfTab.dataset.calBuilt; // force rebuild with latest items
+        buildCashFlowCalendar();
+        // Re-apply grid positions for this tab
+        buildTabGrids();
+      }, 60);
+    } else {
+      setTimeout(() => buildTabGrids(), 60);
     }
-    console.log('[patch v2] loaded — God mode ready, calendar rebuilt, bank delete active');
+    // If god mode is on, rebind drag handles for newly visible tab
+    if (godMode) setTimeout(bindDrag, 120);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 9 — HISTORY BANK DELETE (inject after each render)
+// ═══════════════════════════════════════════════════════════════
+function patchHistoryBank() {
+  const orig = window.renderHistoryBank;
+  if (!orig || window._patchedBank) return;
+  window._patchedBank = true;
+
+  window.renderHistoryBank = function() {
+    orig();
+    addBankDeleteButtons();
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ready);
-  } else {
-    // Site already initialised — wait one tick for its own DOMContentLoaded handlers
-    setTimeout(ready, 100);
+  // Also add to renderInsights patch
+  const origInsights = window.renderInsights;
+  if (origInsights) {
+    window.renderInsights = function() {
+      origInsights();
+      setTimeout(addBankDeleteButtons, 50);
+    };
   }
 }
 
-init();
+function addBankDeleteButtons() {
+  const list = document.getElementById('history-bank-list');
+  if (!list) return;
+  list.querySelectorAll('.history-bank-item').forEach(item => {
+    if (item.querySelector('.bank-x')) return; // already has button
 
-})(); // end IIFE
+    // Determine month key from the item's text or existing onclick
+    let monthKey = null;
+    const resolveBtn = item.querySelector('button[onclick*="openConflictModal"]');
+    if (resolveBtn) {
+      const m = resolveBtn.getAttribute('onclick').match(/openConflictModal\('([^']+)'\)/);
+      if (m) monthKey = m[1];
+    }
+    if (!monthKey) {
+      // Try to derive from the label text (e.g. "Apr 2025")
+      const span = item.querySelector('span[style*="font-weight"]');
+      if (span && window.insightHistory) {
+        const txt = span.textContent.trim();
+        const MS = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        monthKey = Object.keys(window.insightHistory).find(k => {
+          const [y, mi] = k.split('-');
+          return (MS[+mi] + ' ' + y) === txt;
+        });
+      }
+    }
+    if (!monthKey) return;
+
+    const btn = document.createElement('button');
+    btn.className = 'bank-x';
+    btn.title = 'Delete this month from bank';
+    btn.innerHTML = '<i class="ti ti-x" style="font-size:9px;"></i>';
+    btn.onclick = e => { e.stopPropagation(); deleteBankMonth(monthKey); };
+    item.appendChild(btn);
+  });
+}
+
+function deleteBankMonth(key) {
+  const [y, mi] = key.split('-');
+  const MS = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const label = (MS[+mi] || mi) + ' ' + y;
+  if (!confirm(`Delete ${label} from History Bank?\n\nThis removes the month's tracker actuals, history snapshot, and bank entry. Cannot be undone.`)) return;
+  if (window.insightHistory)  delete window.insightHistory[key];
+  if (window.pendingConflicts) delete window.pendingConflicts[key];
+  if (window.trackerData)      delete window.trackerData[key];
+  if (window.monthHistory)     delete window.monthHistory[key];
+  if (window.monthNotes)       delete window.monthNotes[key];
+  if (typeof window.markDirty === 'function') window.markDirty();
+  if (typeof window.renderInsights === 'function') window.renderInsights();
+  if (typeof window.buildNotifications === 'function') window.buildNotifications();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 10 — PATCH captureState TO SAVE LAYOUT
+// ═══════════════════════════════════════════════════════════════
+function patchState() {
+  const origCapture = window.captureState;
+  const origApply   = window.applyState;
+  if (origCapture && !window._patchedCapture) {
+    window._patchedCapture = true;
+    window.captureState = function() {
+      const s = origCapture();
+      s.layoutConfig = layoutConfig;
+      return s;
+    };
+  }
+  if (origApply && !window._patchedApply) {
+    window._patchedApply = true;
+    window.applyState = function(s) {
+      origApply(s);
+      if (s?.layoutConfig) {
+        layoutConfig = s.layoutConfig;
+        buildTabGrids(); // re-apply saved positions
+      }
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+function init() {
+  injectStyles();
+  loadLayout();
+  addMissingIds();
+  buildTabGrids();
+  injectGodUI();
+  buildCashFlowCalendar();
+  patchHistoryBank();
+  patchShowTab();
+  patchState();
+  // Add delete buttons after first insights render (delayed because insights
+  // renders on tab switch, not on load)
+  const insightsOrig = window.renderInsights;
+  if (insightsOrig && !window._patchedIns) {
+    window._patchedIns = true;
+    window.renderInsights = function() {
+      insightsOrig();
+      setTimeout(addBankDeleteButtons, 80);
+    };
+  }
+  console.log('[patch v3] ✓ God mode, calendar, bank delete — all active');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => setTimeout(init, 120));
+} else {
+  setTimeout(init, 120);
+}
+
+})();
