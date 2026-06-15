@@ -261,14 +261,47 @@ function patchMetricsRender() {
 
   function restoreIsland(wrapId, rawCard, tabId) {
     let wrap = document.querySelector(`.gm-wrap[data-id="${wrapId}"]`);
-    if (wrap) {
+    if (!wrap) {
+      // Rebuild the wrapper if the site deleted it
+      wrap = document.createElement('div');
+      wrap.className = 'gm-wrap';
+      wrap.dataset.id = wrapId;
+      wrap.dataset.tab = tabId;
+      
+      const handle = document.createElement('div');
+      handle.className = 'gm-handle';
+      handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
+      
+      const grip = document.createElement('div');
+      grip.className = 'gm-grip';
+      
+      const lbl = document.createElement('div');
+      lbl.className = 'gm-lbl';
+      
+      // Look up the label from TAB_ISLANDS
+      const defs = TAB_ISLANDS[tabId] || [];
+      const def = defs.find(d => d.id === wrapId);
+      lbl.textContent = def ? def.label : wrapId;
+      
+      wrap.appendChild(handle);
+      wrap.appendChild(grip);
+      wrap.appendChild(lbl);
+      
+      const grid = document.getElementById('gm-grid-' + tabId);
+      if (grid) grid.appendChild(wrap);
+      
+      // Restore its grid position
+      const saved = (layoutConfig[tabId] || {})[wrapId];
+      const p = saved || def || {col:1, row:1, w:6, h:2};
+      wrap.style.gridColumn = `${p.col} / span ${p.w}`;
+      wrap.style.gridRow    = `${p.row} / span ${p.h}`;
+      if (p.h > 1) wrap.style.minHeight = (p.h * GRID_ROW_H) + 'px';
+    } else {
       Array.from(wrap.children).forEach(c => {
         if (!c.classList.contains('gm-handle') && !c.classList.contains('gm-grip') && !c.classList.contains('gm-lbl')) c.remove();
       });
-      wrap.appendChild(rawCard);
-    } else if (document.getElementById('gm-grid-' + tabId)) {
-      document.getElementById('gm-grid-' + tabId).appendChild(rawCard);
     }
+    wrap.appendChild(rawCard);
   }
 
   const origRS = window.renderSavings;
@@ -287,7 +320,7 @@ function patchMetricsRender() {
     cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'instruments'); } });
   };
 }
-
+  
 // ═══════════════════════════════════════════════════════════════
 // 3. BUILD GRID PER TAB (wrap islands, set grid positions)
 // ═══════════════════════════════════════════════════════════════
@@ -413,26 +446,29 @@ function unbindDrag() {
   document.querySelectorAll('.gm-grip').forEach(g =>
     g.removeEventListener('mousedown', startResize));
 }
-
 function startDrag(e) {
   if (!godMode) return;
   e.preventDefault();
   const wrap = e.currentTarget.closest('.gm-wrap');
   const grid = wrap && wrap.closest('.gm-grid');
   if (!wrap || !grid) return;
-  const gr   = grid.getBoundingClientRect();
-  const wr   = wrap.getBoundingClientRect();
-  const cx   = e.touches ? e.touches[0].clientX : e.clientX;
-  const cy   = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  
   wrap.classList.add('dragging');
+  wrap.style.zIndex = '999'; // Bring to front while dragging
+  
   dragState = {
     wrap, grid,
-    gr,                          // grid rect at drag-start (fixed reference)
-    ox: cx - wr.left,            // offset within island
-    oy: cy - wr.top,
+    startX: cx,
+    startY: cy,
     w: pSpan(wrap.style.gridColumn),
     h: pSpan(wrap.style.gridRow),
+    sc: pStart(wrap.style.gridColumn),
+    sr: pStart(wrap.style.gridRow)
   };
+  
   document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup',   endDrag);
   document.addEventListener('touchmove', onDrag,  { passive: false });
@@ -444,25 +480,48 @@ function onDrag(e) {
   e.preventDefault();
   const cx = e.touches ? e.touches[0].clientX : e.clientX;
   const cy = e.touches ? e.touches[0].clientY : e.clientY;
-  const { wrap, gr, ox, oy, w, h } = dragState;
-  const cw  = gr.width / GRID_COLS;
-  const relX = cx - ox - gr.left;
-  const relY = cy - oy - gr.top + window.scrollY - (gr.top > 0 ? 0 : 0);
-  const col  = Math.max(1, Math.min(GRID_COLS - w + 1, Math.round(relX / cw) + 1));
-  const row  = Math.max(1, Math.round(relY / GRID_ROW_H) + 1);
-  wrap.style.gridColumn = `${col} / span ${w}`;
-  wrap.style.gridRow    = `${row} / span ${h}`;
+  
+  const dx = cx - dragState.startX;
+  const dy = cy - dragState.startY;
+  
+  // Glide smoothly visually without fighting the CSS Grid layout
+  dragState.wrap.style.transform = `translate(${dx}px, ${dy}px)`;
 }
 
-function endDrag() {
+function endDrag(e) {
   if (!dragState) return;
-  dragState.wrap.classList.remove('dragging');
-  recordPos(dragState.wrap);
+  const { wrap, grid, startX, startY, w, h, sc, sr } = dragState;
+  
+  const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+  const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+  
+  const dx = cx - startX;
+  const dy = cy - startY;
+  const cw = grid.getBoundingClientRect().width / GRID_COLS;
+  
+  // Calculate final drop position
+  const colOffset = Math.round(dx / cw);
+  const rowOffset = Math.round(dy / GRID_ROW_H);
+  const newCol = Math.max(1, Math.min(GRID_COLS - w + 1, sc + colOffset));
+  const newRow = Math.max(1, sr + rowOffset);
+  
+  // Remove temporary visual glide state
+  wrap.style.transform = '';
+  wrap.style.zIndex = '';
+  wrap.classList.remove('dragging');
+  
+  // Lock into hard grid
+  wrap.style.gridColumn = `${newCol} / span ${w}`;
+  wrap.style.gridRow    = `${newRow} / span ${h}`;
+  
+  recordPos(wrap);
+  
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup',   endDrag);
   document.removeEventListener('touchmove', onDrag);
   document.removeEventListener('touchend',  endDrag);
   dragState = null;
+}
 }
 
 function startResize(e) {
@@ -561,28 +620,20 @@ window.resetLayout = resetLayout;
 // 7. GOD BAR + BUTTON
 // ═══════════════════════════════════════════════════════════════
 function injectGodUI() {
-  // Prevent duplicate injection
   if (document.getElementById('gm-btn')) return;
-  
-  // Find the exact container
   const navRight = document.querySelector('.nav-right');
   if (!navRight) {
-    console.warn('[patch v5] Could not find .nav-right to inject God Mode button. Retrying in 500ms...');
-    setTimeout(injectGodUI, 500); // Retry if DOM isn't ready
+    setTimeout(injectGodUI, 500); // Retry until nav is ready
     return;
   }
 
-  // Create Button
   const btn = document.createElement('button');
   btn.id = 'gm-btn';
   btn.className = 'god-btn';
   btn.innerHTML = '<i class="ti ti-adjustments"></i> Configure';
   btn.onclick = toggleGodMode;
-  
-  // Insert before the profile toggle or at the start
   navRight.insertBefore(btn, navRight.firstChild);
 
-  // Create Floating Bar
   const bar = document.createElement('div');
   bar.id = 'gm-bar';
   bar.innerHTML = `
