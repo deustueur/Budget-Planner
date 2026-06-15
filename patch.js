@@ -814,25 +814,27 @@ function patchShowTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 9. HISTORY GRID DELETE (Fixed Placement)
+// 9. HISTORY GRID DELETE (Fixed Placement & Data Purge)
 // ═══════════════════════════════════════════════════════════════
 function patchBank() {
   if (window._gmBank) return;
   const origRHG = window.renderHistoryGrid;
-  const origRI  = window.renderInsights;
   if (!origRHG) return;
   window._gmBank = true;
 
   function addX() {
-    // Target the Grid Cards on the LEFT, not the Bank List on the right
+    // 1. Target the square cards on the LEFT, not the list on the right
     const grid = document.getElementById('history-grid');
     if (!grid) return;
     
     grid.querySelectorAll('.history-card').forEach(card => {
       if (card.querySelector('.bx')) return; // Already has the X
       
+      // 2. Fix CSS anchor: The card must be relative so the absolute X stays on the corner
+      card.style.position = 'relative';
+      
       let key = null;
-      // Extract the key directly from the card's onclick attribute
+      // Extract the exact month key from the card's onclick attribute
       const onclickAttr = card.getAttribute('onclick') || '';
       const m = onclickAttr.match(/loadHistoryDetail\('([^']+)'/);
       if (m) key = m[1];
@@ -844,14 +846,15 @@ function patchBank() {
       btn.title = 'Delete this month';
       btn.innerHTML = '✕';
       
-      // Position the X neatly in the top-right corner of the card
+      // Force position to top-right corner
       btn.style.position = 'absolute';
       btn.style.top = '-6px';
       btn.style.right = '-6px';
       btn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+      btn.style.zIndex = '10';
       
       btn.onclick = ev => { 
-        ev.stopPropagation(); // Stop the card from opening when clicking X
+        ev.stopPropagation(); // Stop the card from opening the detail panel when clicking X
         delBank(key); 
       };
       
@@ -859,8 +862,11 @@ function patchBank() {
     });
   }
 
-  window.renderHistoryGrid = function() { origRHG(); setTimeout(addX, 150); };
-  if (origRI) window.renderInsights = function() { origRI(); setTimeout(addX, 150); };
+  // 3. Prevent double-firing: Only hook into the Grid render, not Insights
+  window.renderHistoryGrid = function() { 
+    origRHG(); 
+    setTimeout(addX, 150); 
+  };
 }
 
 function delBank(key) {
@@ -869,17 +875,21 @@ function delBank(key) {
   
   if (!confirm(`Delete ${msNames[+mi]} ${y} from History?\n\nRemoves tracker actuals, history snapshot, and bank entry. Cannot be undone.`)) return;
   
-  // This purges the file and its data completely
-  if (typeof insightHistory !== 'undefined')   delete insightHistory[key];
-  if (typeof pendingConflicts !== 'undefined') delete pendingConflicts[key];
-  if (typeof trackerData !== 'undefined')      delete trackerData[key];
-  if (typeof monthHistory !== 'undefined')     delete monthHistory[key];
-  if (typeof monthNotes !== 'undefined')       delete monthNotes[key];
+  // 4. Safely purge the properties from the objects
+  if (typeof insightHistory !== 'undefined' && insightHistory[key])     delete insightHistory[key];
+  if (typeof pendingConflicts !== 'undefined' && pendingConflicts[key]) delete pendingConflicts[key];
+  if (typeof trackerData !== 'undefined' && trackerData[key])           delete trackerData[key];
+  if (typeof monthHistory !== 'undefined' && monthHistory[key])         delete monthHistory[key];
+  if (typeof monthNotes !== 'undefined' && monthNotes[key])             delete monthNotes[key];
   
+  // Close the detail panel if it happens to be open for the month we just deleted
+  const detailPanel = document.getElementById('history-detail');
+  if (detailPanel) detailPanel.classList.remove('open');
+  
+  // Save and trigger UI refresh
   if (typeof markDirty === 'function') markDirty();
   if (typeof renderInsights === 'function') renderInsights();
   if (typeof buildNotifications === 'function') buildNotifications();
-  if (typeof renderTracker === 'function') renderTracker();
 }
 
 // ═══════════════════════════════════════════════════════════════
