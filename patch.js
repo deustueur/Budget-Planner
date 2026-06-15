@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// BUDGET PLANNER — PATCH v4
+// BUDGET PLANNER — PATCH v5 (Final)
 // God mode (all tabs), cash flow calendar, history bank delete
 // ═══════════════════════════════════════════════════════════════════
 (function () {
@@ -8,7 +8,7 @@
 // ─── CONFIG ─────────────────────────────────────────────────────
 const GRID_COLS  = 24;
 const GRID_ROW_H = 80;
-const LS_LAYOUT  = 'bp_layout_v4';
+const LS_LAYOUT  = 'bp_layout_v5';
 
 // ── Island definitions using REAL element IDs from index.html ──
 const TAB_ISLANDS = {
@@ -60,7 +60,12 @@ const TAB_ISLANDS = {
     { id:'ins-templates',      label:'Templates',       col:1,  row:25, w:24, h:3 },
   ],
 };
-  
+
+let godMode      = false;
+let layoutConfig = {};
+let dragState    = null;
+let resizeState  = null;
+
 // ═══════════════════════════════════════════════════════════════
 // 1. STYLES
 // ═══════════════════════════════════════════════════════════════
@@ -103,7 +108,7 @@ body.gm-on .gm-wrap{
 body.gm-on .gm-wrap:hover{
   outline-color:rgba(127,119,221,0.55);
   box-shadow:0 0 0 4px rgba(127,119,221,0.09);z-index:10;}
-body.gm-on .gm-wrap.dragging{opacity:.35;}
+body.gm-on .gm-wrap.dragging{opacity:.85;}
 
 .gm-handle{display:none;position:absolute;top:7px;left:7px;z-index:30;
   width:24px;height:24px;border-radius:7px;
@@ -204,16 +209,16 @@ function addStaticIds() {
   if (cfTwoCols[0]) cfTwoCols[0].id = 'cf-due-card';
   if (cfTwoCols[1]) cfTwoCols[1].id = 'cf-tax-card';
   const oldBottomRow = document.getElementById('cf-bottom-row');
-  if (oldBottomRow) oldBottomRow.id = ''; // Disband the chunk wrapper
+  if (oldBottomRow) oldBottomRow.id = ''; 
 
-  // ── Savings Metrics (Initial Tagging) ──
+  // ── Savings Metrics ──
   const savCards = document.querySelectorAll('#savings-metrics .metric-card');
   if (savCards[0]) savCards[0].id = 'sav-met-total';
   if (savCards[1]) savCards[1].id = 'sav-met-trevin';
   if (savCards[2]) savCards[2].id = 'sav-met-dulini';
   if (savCards[3]) savCards[3].id = 'sav-met-active';
 
-  // ── Instruments Metrics (Initial Tagging) ──
+  // ── Instruments Metrics ──
   const insCards = document.querySelectorAll('#instr-metrics .metric-card');
   if (insCards[0]) insCards[0].id = 'ins-met-total';
   if (insCards[1]) insCards[1].id = 'ins-met-debt';
@@ -262,7 +267,7 @@ function patchMetricsRender() {
   function restoreIsland(wrapId, rawCard, tabId) {
     let wrap = document.querySelector(`.gm-wrap[data-id="${wrapId}"]`);
     if (!wrap) {
-      // Rebuild the wrapper if the site deleted it
+      // Rebuild the missing God Mode wrapper safely
       wrap = document.createElement('div');
       wrap.className = 'gm-wrap';
       wrap.dataset.id = wrapId;
@@ -271,14 +276,15 @@ function patchMetricsRender() {
       const handle = document.createElement('div');
       handle.className = 'gm-handle';
       handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
+      handle.title = 'Drag to move';
       
       const grip = document.createElement('div');
       grip.className = 'gm-grip';
+      grip.title = 'Drag to resize';
       
       const lbl = document.createElement('div');
       lbl.className = 'gm-lbl';
       
-      // Look up the label from TAB_ISLANDS
       const defs = TAB_ISLANDS[tabId] || [];
       const def = defs.find(d => d.id === wrapId);
       lbl.textContent = def ? def.label : wrapId;
@@ -290,7 +296,6 @@ function patchMetricsRender() {
       const grid = document.getElementById('gm-grid-' + tabId);
       if (grid) grid.appendChild(wrap);
       
-      // Restore its grid position
       const saved = (layoutConfig[tabId] || {})[wrapId];
       const p = saved || def || {col:1, row:1, w:6, h:2};
       wrap.style.gridColumn = `${p.col} / span ${p.w}`;
@@ -306,21 +311,25 @@ function patchMetricsRender() {
 
   const origRS = window.renderSavings;
   window.renderSavings = function() {
-    origRS();
+    if(origRS) origRS();
     const cards = document.querySelectorAll('#savings-metrics .metric-card');
     const ids = ['sav-met-total', 'sav-met-trevin', 'sav-met-dulini', 'sav-met-active'];
     cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'savings'); } });
+    const metricContainer = document.getElementById('savings-metrics');
+    if (metricContainer) metricContainer.style.display = 'none'; // hide original wrapper
   };
 
   const origRI = window.renderInstruments;
   window.renderInstruments = function() {
-    origRI();
+    if(origRI) origRI();
     const cards = document.querySelectorAll('#instr-metrics .metric-card');
     const ids = ['ins-met-total', 'ins-met-debt', 'ins-met-invest'];
     cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'instruments'); } });
+    const metricContainer = document.getElementById('instr-metrics');
+    if (metricContainer) metricContainer.style.display = 'none'; // hide original wrapper
   };
 }
-  
+
 // ═══════════════════════════════════════════════════════════════
 // 3. BUILD GRID PER TAB (wrap islands, set grid positions)
 // ═══════════════════════════════════════════════════════════════
@@ -329,13 +338,11 @@ function buildTabGrids() {
     const tabEl = document.getElementById('tab-' + tabId);
     if (!tabEl) return;
 
-    // Get or create grid container
     let grid = document.getElementById('gm-grid-' + tabId);
     if (!grid) {
       grid = document.createElement('div');
       grid.className = 'gm-grid';
       grid.id = 'gm-grid-' + tabId;
-      // Move all direct tab children into grid
       Array.from(tabEl.children).forEach(c => grid.appendChild(c));
       tabEl.appendChild(grid);
     }
@@ -344,7 +351,6 @@ function buildTabGrids() {
       const el = document.getElementById(def.id);
       if (!el) return;
 
-      // Wrap in .gm-wrap if not already
       let wrap = el.closest('.gm-wrap');
       if (!wrap) {
         wrap = document.createElement('div');
@@ -372,10 +378,8 @@ function buildTabGrids() {
         wrap.appendChild(lbl);
       }
 
-      // Move into grid container
       if (wrap.parentElement !== grid) grid.appendChild(wrap);
 
-      // Apply saved or default position
       const saved = (layoutConfig[tabId] || {})[def.id];
       const p = saved || def;
       wrap.style.gridColumn = `${p.col} / span ${p.w}`;
@@ -446,6 +450,7 @@ function unbindDrag() {
   document.querySelectorAll('.gm-grip').forEach(g =>
     g.removeEventListener('mousedown', startResize));
 }
+
 function startDrag(e) {
   if (!godMode) return;
   e.preventDefault();
@@ -484,7 +489,7 @@ function onDrag(e) {
   const dx = cx - dragState.startX;
   const dy = cy - dragState.startY;
   
-  // Glide smoothly visually without fighting the CSS Grid layout
+  // Smooth CSS transform glide instead of fighting CSS Grid reflow
   dragState.wrap.style.transform = `translate(${dx}px, ${dy}px)`;
 }
 
@@ -499,18 +504,16 @@ function endDrag(e) {
   const dy = cy - startY;
   const cw = grid.getBoundingClientRect().width / GRID_COLS;
   
-  // Calculate final drop position
+  // Snap to final grid position
   const colOffset = Math.round(dx / cw);
   const rowOffset = Math.round(dy / GRID_ROW_H);
   const newCol = Math.max(1, Math.min(GRID_COLS - w + 1, sc + colOffset));
   const newRow = Math.max(1, sr + rowOffset);
   
-  // Remove temporary visual glide state
   wrap.style.transform = '';
   wrap.style.zIndex = '';
   wrap.classList.remove('dragging');
   
-  // Lock into hard grid
   wrap.style.gridColumn = `${newCol} / span ${w}`;
   wrap.style.gridRow    = `${newRow} / span ${h}`;
   
@@ -521,7 +524,6 @@ function endDrag(e) {
   document.removeEventListener('touchmove', onDrag);
   document.removeEventListener('touchend',  endDrag);
   dragState = null;
-}
 }
 
 function startResize(e) {
@@ -650,7 +652,7 @@ function injectGodUI() {
     </button>`;
   document.body.appendChild(bar);
 }
-  
+
 // ═══════════════════════════════════════════════════════════════
 // 8. CASH FLOW CALENDAR
 // ═══════════════════════════════════════════════════════════════
@@ -658,7 +660,6 @@ function buildCalendarCard() {
   const cfTab = document.getElementById('tab-cashflow');
   if (!cfTab) return;
 
-  // Create the calendar card if it doesn't exist
   if (!document.getElementById('cf-calendar-card')) {
     const card = document.createElement('div');
     card.id = 'cf-calendar-card';
@@ -667,12 +668,10 @@ function buildCalendarCard() {
     cfTab.insertBefore(card, cfTab.firstChild);
   }
 
-  // Create bottom row wrapper (due soon + tax)
   if (!document.getElementById('cf-bottom-row')) {
     const row = document.createElement('div');
     row.id = 'cf-bottom-row';
     row.className = 'two-col';
-    // Move existing two-col or standalone cards into it
     const existing = cfTab.querySelector('.two-col:not(#cf-bottom-row)');
     if (existing) {
       cfTab.insertBefore(row, existing);
@@ -699,7 +698,6 @@ function renderCalendar() {
   const getTk = window.getTkey || ((m,y) => `${y}-${m}`);
   const tkey  = getTk(mo, yr);
 
-  // Build day map
   const dm = {};
   (window.items || []).filter(i => i.on && i.dueDay > 0).forEach(it => {
     const d = it.dueDay;
@@ -741,7 +739,6 @@ function renderCalendar() {
       <span><span class="cf-ld" style="background:#7F77DD;"></span>Both</span>
     </div>`;
 
-  // Day click
   window.cfClick = function(day) {
     const its = dm[day] || [];
     const det = document.getElementById('cf-det');
@@ -796,7 +793,6 @@ function renderCalendar() {
   };
 }
 
-// Rebuild calendar when switching to cashflow tab
 function patchShowTab() {
   if (window._gmShowTab) return;
   const orig = window.showTab;
@@ -805,7 +801,6 @@ function patchShowTab() {
   window.showTab = function(t) {
     orig(t);
     if (t === 'cashflow') setTimeout(renderCalendar, 60);
-    // Rebind drag if god mode is on
     if (godMode) setTimeout(bindDrag, 120);
   };
 }
@@ -825,7 +820,6 @@ function patchBank() {
     if (!list) return;
     list.querySelectorAll('.history-bank-item').forEach(item => {
       if (item.querySelector('.bx')) return;
-      // Find monthKey
       let key = null;
       const resolveBtn = item.querySelector('button[onclick*="openConflictModal"]');
       if (resolveBtn) {
@@ -906,11 +900,14 @@ function patchInit() {
   patchBank();
   patchShowTab();
   patchState();
-  console.log('[patch v4.1] ✓ loaded with granular splits');
+  
+  if (document.querySelector('#tab-savings.active') && typeof window.renderSavings === 'function') window.renderSavings();
+  if (document.querySelector('#tab-instruments.active') && typeof window.renderInstruments === 'function') window.renderInstruments();
+  
+  console.log('[patch v5] ✓ loaded with precise dragging and metric protection');
 }
 
 // Wait for main site DOMContentLoaded to finish, then run
-// Using 200ms to ensure main site init() has fully completed
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setTimeout(patchInit, 200));
 } else {
