@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
-// BUDGET PLANNER — PATCH v2
-// Fixes: layout gravity-fill + God mode, cash flow calendar, 
-//        history bank delete button
+// BUDGET PLANNER — PATCH v3
+// Fixes: Absolute-canvas God Mode, Cash Flow calendar, history bank delete
 // ═══════════════════════════════════════════════════════════════════
 
 (function(){
@@ -14,6 +13,7 @@ const GOD_STORAGE_KEY = 'bp_layout_v1';
 
 // ─── STATE ──────────────────────────────────────────────────────
 let godMode = false;
+let godCanvas = null;  // Fixed absolute canvas overlay for dragging
 let layoutConfig = {}; // { tabId: { islandId: {col,row,w,h} } }
 let dragState = null;  // active drag info
 let resizeState = null;
@@ -88,7 +88,7 @@ function injectStyles() {
   background:var(--surface);border:1px solid var(--border);
   border-radius:99px;padding:8px 16px;
   display:flex;align-items:center;gap:10px;
-  box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:800;
+  box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:1000;
   font-size:12px;color:var(--text2);
   opacity:0;pointer-events:none;transition:opacity .2s;
 }
@@ -114,17 +114,15 @@ function injectStyles() {
   box-shadow:0 0 0 4px rgba(127,119,221,0.12);
 }
 .god-active .island-wrapper.dragging {
-  opacity:.5;outline-color:var(--accent);
-}
-.god-active .island-wrapper.drag-over {
+  opacity:0.9;
   outline-color:var(--accent);
-  background:var(--accent-light);
-  box-shadow:0 0 0 4px rgba(29,158,117,0.15);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  z-index:999 !important;
 }
 
 /* Drag handle */
 .island-handle {
-  display:none;position:absolute;top:6px;left:6px;z-index:10;
+  display:none;position:absolute;top:6px;left:6px;z-index:20;
   width:22px;height:22px;border-radius:6px;
   background:var(--purple);color:#fff;
   cursor:grab;align-items:center;justify-content:center;
@@ -136,7 +134,7 @@ function injectStyles() {
 
 /* Resize grip */
 .island-resize {
-  display:none;position:absolute;bottom:4px;right:4px;z-index:10;
+  display:none;position:absolute;bottom:4px;right:4px;z-index:20;
   width:16px;height:16px;cursor:se-resize;
   border-right:3px solid var(--purple);border-bottom:3px solid var(--purple);
   border-radius:0 0 4px 0;opacity:.7;
@@ -145,7 +143,7 @@ function injectStyles() {
 
 /* Island label badge */
 .island-label {
-  display:none;position:absolute;top:6px;right:6px;z-index:10;
+  display:none;position:absolute;top:6px;right:6px;z-index:20;
   font-size:9px;padding:2px 7px;border-radius:99px;
   background:rgba(127,119,221,0.15);color:var(--purple);
   font-weight:700;letter-spacing:.05em;text-transform:uppercase;
@@ -153,7 +151,17 @@ function injectStyles() {
 }
 .god-active .island-wrapper:hover .island-label { display:block; }
 
-/* ── Grid canvas (god mode bg) ── */
+/* ── Absolute God Canvas Overlay ── */
+.god-canvas {
+  pointer-events: none; /* Ignore clicks on empty space */
+}
+.god-canvas .island-wrapper {
+  pointer-events: auto; /* Allow interactions on the islands */
+  z-index: 10;
+  background: var(--bg);
+}
+
+/* ── Grid canvas (background subtle dots) ── */
 .god-grid-canvas {
   position:fixed;inset:0;pointer-events:none;z-index:1;
   opacity:0;transition:opacity .3s;
@@ -265,20 +273,20 @@ function wrapIslands() {
       wrapper.className = 'island-wrapper';
       wrapper.dataset.island = def.id;
       wrapper.dataset.tab = tabId;
-      // drag handle
+      
       const handle = document.createElement('div');
       handle.className = 'island-handle';
       handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
       handle.title = 'Drag to move';
-      // resize grip
+      
       const grip = document.createElement('div');
       grip.className = 'island-resize';
       grip.title = 'Drag to resize';
-      // label
+      
       const label = document.createElement('div');
       label.className = 'island-label';
       label.textContent = def.label;
-      // wrap
+      
       el.parentNode.insertBefore(wrapper, el);
       wrapper.appendChild(el);
       wrapper.appendChild(handle);
@@ -286,7 +294,6 @@ function wrapIslands() {
       wrapper.appendChild(label);
     });
   });
-  // Also wrap existing two-col/chart-card combos on dashboard into island grid
   rebuildDashboardGrid();
 }
 
@@ -294,7 +301,6 @@ function wrapIslands() {
 function rebuildDashboardGrid() {
   const tab = document.getElementById('tab-dashboard');
   if (!tab) return;
-  // Create island grid container if not exists
   let grid = tab.querySelector('.island-grid#dash-island-grid');
   if (!grid) {
     grid = document.createElement('div');
@@ -302,7 +308,6 @@ function rebuildDashboardGrid() {
     grid.id = 'dash-island-grid';
     tab.appendChild(grid);
   }
-  // Move two-col and standalone cards into grid with CSS grid-column spans
   applyDefaultGridPositions('dashboard', grid);
 }
 
@@ -319,23 +324,30 @@ function applyDefaultGridPositions(tabId, container) {
     const row = pos.row || def.row;
     const w   = pos.w   || def.w;
     const h   = pos.h   || def.h;
+    
     wrapper.style.gridColumn = `${col} / span ${w}`;
     wrapper.style.gridRow    = `${row} / span ${h}`;
     if (h > 1) wrapper.style.minHeight = (h * GRID_ROW_H) + 'px';
-    // Move into grid container if not already there
+    
+    // Move into grid container and intelligently hide abandoned legacy containers
     if (wrapper.parentElement !== container) {
+      const oldParent = wrapper.parentElement;
       container.appendChild(wrapper);
+      if (oldParent && oldParent.children.length === 0 && !oldParent.classList.contains('page')) {
+        oldParent.style.display = 'none'; // Resolves Root Cause 1 entirely
+      }
     }
   });
 }
 
-// ─── GOD MODE TOGGLE ────────────────────────────────────────────
+// ─── GOD MODE TOGGLE (The Absolute Canvas Controller) ───────────
 function toggleGodMode() {
   godMode = !godMode;
   const btn = document.getElementById('god-mode-btn');
   const bar = document.getElementById('god-bar');
-  const canvas = document.getElementById('god-grid-canvas');
+  const bgCanvas = document.getElementById('god-grid-canvas');
   document.body.classList.toggle('god-active', godMode);
+  
   if (btn) {
     btn.classList.toggle('active', godMode);
     btn.innerHTML = godMode
@@ -343,14 +355,111 @@ function toggleGodMode() {
       : '<i class="ti ti-adjustments"></i> Configure';
   }
   if (bar) bar.classList.toggle('visible', godMode);
+
+  const activeTab = document.querySelector('.page.active');
+  const grid = activeTab ? activeTab.querySelector('.island-grid') : null;
+
   if (godMode) {
+    if (!grid) return;
     drawGridCanvas();
+    enterAbsoluteMode(grid);
     attachDragListeners();
   } else {
-    if (canvas) canvas.style.opacity = '0';
+    if (godCanvas) exitAbsoluteMode(grid);
+    if (bgCanvas) bgCanvas.style.opacity = '0';
     detachDragListeners();
     saveLayoutConfig();
   }
+}
+
+function enterAbsoluteMode(grid) {
+  if (document.getElementById('god-canvas')) return;
+
+  godCanvas = document.createElement('div');
+  godCanvas.id = 'god-canvas';
+  godCanvas.className = 'god-canvas';
+
+  const gridRect = grid.getBoundingClientRect();
+  godCanvas.style.cssText = `
+    position: absolute;
+    top: ${gridRect.top + window.scrollY}px;
+    left: ${gridRect.left + window.scrollX}px;
+    width: ${gridRect.width}px;
+    height: ${gridRect.height}px;
+    z-index: 100;
+  `;
+  document.body.appendChild(godCanvas);
+
+  const wrappers = Array.from(grid.querySelectorAll('.island-wrapper'));
+  wrappers.forEach(wrapper => {
+    const rect = wrapper.getBoundingClientRect();
+    
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+    const l = Math.round(rect.left - gridRect.left);
+    const t = Math.round(rect.top - gridRect.top);
+
+    wrapper.style.position = 'absolute';
+    wrapper.style.left = l + 'px';
+    wrapper.style.top = t + 'px';
+    wrapper.style.width = w + 'px';
+    wrapper.style.height = h + 'px';
+    wrapper.style.margin = '0';
+
+    godCanvas.appendChild(wrapper);
+  });
+
+  // Hold grid height so the page doesn't collapse
+  grid.style.minHeight = gridRect.height + 'px';
+}
+
+function exitAbsoluteMode(grid) {
+  if (!godCanvas) return;
+  const gridRect = grid.getBoundingClientRect();
+  const colW = gridRect.width / GRID_COLS;
+
+  const wrappers = Array.from(godCanvas.querySelectorAll('.island-wrapper'));
+  const tabId = grid.id.replace('-island-grid', '');
+
+  let maxH = 0;
+
+  wrappers.forEach(wrapper => {
+    const left = parseFloat(wrapper.style.left) || 0;
+    const top = parseFloat(wrapper.style.top) || 0;
+    const width = parseFloat(wrapper.style.width) || 0;
+    const height = parseFloat(wrapper.style.height) || 0;
+
+    // Mathematically lock to CSS Grid dimensions
+    const newCol = Math.max(1, Math.min(GRID_COLS, Math.round(left / colW) + 1));
+    const newRow = Math.max(1, Math.round(top / GRID_ROW_H) + 1);
+    const newW = Math.max(1, Math.round(width / colW));
+    const newH = Math.max(1, Math.round(height / GRID_ROW_H));
+
+    wrapper.style.position = '';
+    wrapper.style.left = '';
+    wrapper.style.top = '';
+    wrapper.style.width = '';
+    wrapper.style.height = '';
+    wrapper.style.margin = '';
+
+    wrapper.style.gridColumn = `${newCol} / span ${newW}`;
+    wrapper.style.gridRow = `${newRow} / span ${newH}`;
+    wrapper.style.minHeight = (newH * GRID_ROW_H) + 'px';
+
+    if (newRow + newH - 1 > maxH) maxH = newRow + newH - 1;
+
+    const islandId = wrapper.dataset.island;
+    if (islandId && tabId) {
+      if (!layoutConfig[tabId]) layoutConfig[tabId] = {};
+      layoutConfig[tabId][islandId] = { col: newCol, row: newRow, w: newW, h: newH };
+    }
+
+    grid.appendChild(wrapper);
+  });
+
+  godCanvas.remove();
+  godCanvas = null;
+  grid.style.minHeight = (maxH * GRID_ROW_H) + 'px';
 }
 
 // ─── GRID CANVAS (subtle dot grid overlay) ──────────────────────
@@ -378,7 +487,7 @@ function drawGridCanvas() {
   canvas.style.opacity = '1';
 }
 
-// ─── DRAG AND DROP ──────────────────────────────────────────────
+// ─── ABSOLUTE DRAG AND DROP ─────────────────────────────────────
 function attachDragListeners() {
   document.querySelectorAll('.island-handle').forEach(handle => {
     handle.addEventListener('mousedown', onDragStart);
@@ -401,35 +510,25 @@ function detachDragListeners() {
 
 function onDragStart(e) {
   const wrapper = e.currentTarget.closest('.island-wrapper');
-  if (!wrapper) return;
+  if (!wrapper || !godCanvas) return;
   e.preventDefault();
   wrapper.classList.add('dragging');
+
+  // Bring island to front of canvas
+  godCanvas.appendChild(wrapper);
+
   dragState = {
     wrapper,
     startX: (e.touches ? e.touches[0].clientX : e.clientX),
     startY: (e.touches ? e.touches[0].clientY : e.clientY),
-    origHTML: null,
-    placeholder: createPlaceholder(wrapper),
+    initLeft: parseFloat(wrapper.style.left) || 0,
+    initTop: parseFloat(wrapper.style.top) || 0
   };
-  wrapper.parentNode.insertBefore(dragState.placeholder, wrapper.nextSibling);
+
   document.addEventListener('mousemove', onDragMove);
   document.addEventListener('mouseup', onDragEnd);
   document.addEventListener('touchmove', onDragMove, { passive: false });
   document.addEventListener('touchend', onDragEnd);
-}
-
-function createPlaceholder(wrapper) {
-  const ph = document.createElement('div');
-  ph.className = 'island-placeholder';
-  ph.style.cssText = `
-    grid-column:${wrapper.style.gridColumn};
-    grid-row:${wrapper.style.gridRow};
-    background:rgba(127,119,221,0.08);
-    border:2px dashed rgba(127,119,221,0.3);
-    border-radius:var(--radius-lg);
-    min-height:${wrapper.offsetHeight}px;
-  `;
-  return ph;
 }
 
 function onDragMove(e) {
@@ -437,41 +536,26 @@ function onDragMove(e) {
   e.preventDefault();
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  // Snap to grid
-  const grid = dragState.wrapper.parentElement;
-  if (!grid) return;
-  const gridRect = grid.getBoundingClientRect();
+  
+  const dx = clientX - dragState.startX;
+  const dy = clientY - dragState.startY;
+
+  let newLeft = dragState.initLeft + dx;
+  let newTop = dragState.initTop + dy;
+
+  // Snappy visual movement relative to grid segments
+  const gridRect = godCanvas.getBoundingClientRect();
   const colW = gridRect.width / GRID_COLS;
-  const newCol = Math.max(1, Math.min(GRID_COLS, Math.round((clientX - gridRect.left) / colW) + 1));
-  const scrollTop = window.scrollY;
-  const newRow = Math.max(1, Math.round((clientY + scrollTop - gridRect.top - scrollTop) / GRID_ROW_H) + 1);
-  // Get current span
-  const currentSpan = parseGridSpan(dragState.wrapper.style.gridColumn);
-  const currentRowSpan = parseGridSpan(dragState.wrapper.style.gridRow);
-  const endCol = Math.min(GRID_COLS + 1, newCol + currentSpan);
-  dragState.wrapper.style.gridColumn = `${newCol} / span ${Math.min(currentSpan, GRID_COLS - newCol + 1)}`;
-  dragState.wrapper.style.gridRow    = `${newRow} / span ${currentRowSpan}`;
-  // Visual feedback
-  document.querySelectorAll('.island-wrapper').forEach(w => {
-    if (w !== dragState.wrapper) w.classList.remove('drag-over');
-  });
+  const snapLeft = Math.round(newLeft / colW) * colW;
+  const snapTop = Math.round(newTop / GRID_ROW_H) * GRID_ROW_H;
+
+  dragState.wrapper.style.left = snapLeft + 'px';
+  dragState.wrapper.style.top = snapTop + 'px';
 }
 
 function onDragEnd(e) {
   if (!dragState) return;
   dragState.wrapper.classList.remove('dragging');
-  if (dragState.placeholder) dragState.placeholder.remove();
-  // Save new position
-  const islandId = dragState.wrapper.dataset.island;
-  const tabId = dragState.wrapper.dataset.tab;
-  if (islandId && tabId) {
-    if (!layoutConfig[tabId]) layoutConfig[tabId] = {};
-    const col = parseGridStart(dragState.wrapper.style.gridColumn);
-    const row = parseGridStart(dragState.wrapper.style.gridRow);
-    const w   = parseGridSpan(dragState.wrapper.style.gridColumn);
-    const h   = parseGridSpan(dragState.wrapper.style.gridRow);
-    layoutConfig[tabId][islandId] = { col, row, w, h };
-  }
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup', onDragEnd);
   document.removeEventListener('touchmove', onDragMove);
@@ -479,17 +563,20 @@ function onDragEnd(e) {
   dragState = null;
 }
 
-// ─── RESIZE ─────────────────────────────────────────────────────
+// ─── ABSOLUTE RESIZE ────────────────────────────────────────────
 function onResizeStart(e) {
   const wrapper = e.currentTarget.closest('.island-wrapper');
-  if (!wrapper) return;
+  if (!wrapper || !godCanvas) return;
   e.preventDefault();
+
+  godCanvas.appendChild(wrapper); // Bring to front
+
   resizeState = {
     wrapper,
     startX: e.clientX,
     startY: e.clientY,
-    startW: parseGridSpan(wrapper.style.gridColumn),
-    startH: parseGridSpan(wrapper.style.gridRow),
+    initWidth: parseFloat(wrapper.style.width) || wrapper.offsetWidth,
+    initHeight: parseFloat(wrapper.style.height) || wrapper.offsetHeight
   };
   document.addEventListener('mousemove', onResizeMove);
   document.addEventListener('mouseup', onResizeEnd);
@@ -497,48 +584,28 @@ function onResizeStart(e) {
 
 function onResizeMove(e) {
   if (!resizeState) return;
-  const grid = resizeState.wrapper.parentElement;
-  if (!grid) return;
-  const gridRect = grid.getBoundingClientRect();
-  const colW = gridRect.width / GRID_COLS;
+  e.preventDefault();
   const dx = e.clientX - resizeState.startX;
   const dy = e.clientY - resizeState.startY;
-  const newW = Math.max(4, Math.min(GRID_COLS, resizeState.startW + Math.round(dx / colW)));
-  const newH = Math.max(1, resizeState.startH + Math.round(dy / GRID_ROW_H));
-  const startCol = parseGridStart(resizeState.wrapper.style.gridColumn);
-  resizeState.wrapper.style.gridColumn = `${startCol} / span ${newW}`;
-  resizeState.wrapper.style.gridRow    = `${parseGridStart(resizeState.wrapper.style.gridRow)} / span ${newH}`;
-  resizeState.wrapper.style.minHeight  = (newH * GRID_ROW_H) + 'px';
+
+  const gridRect = godCanvas.getBoundingClientRect();
+  const colW = gridRect.width / GRID_COLS;
+
+  const newWidth = Math.max(colW * 4, resizeState.initWidth + dx);
+  const newHeight = Math.max(GRID_ROW_H, resizeState.initHeight + dy);
+
+  const snapWidth = Math.round(newWidth / colW) * colW;
+  const snapHeight = Math.round(newHeight / GRID_ROW_H) * GRID_ROW_H;
+
+  resizeState.wrapper.style.width = snapWidth + 'px';
+  resizeState.wrapper.style.height = snapHeight + 'px';
 }
 
 function onResizeEnd(e) {
   if (!resizeState) return;
-  const islandId = resizeState.wrapper.dataset.island;
-  const tabId    = resizeState.wrapper.dataset.tab;
-  if (islandId && tabId) {
-    if (!layoutConfig[tabId]) layoutConfig[tabId] = {};
-    layoutConfig[tabId][islandId] = {
-      col: parseGridStart(resizeState.wrapper.style.gridColumn),
-      row: parseGridStart(resizeState.wrapper.style.gridRow),
-      w:   parseGridSpan(resizeState.wrapper.style.gridColumn),
-      h:   parseGridSpan(resizeState.wrapper.style.gridRow),
-    };
-  }
   document.removeEventListener('mousemove', onResizeMove);
   document.removeEventListener('mouseup', onResizeEnd);
   resizeState = null;
-}
-
-// ─── GRID PARSE HELPERS ─────────────────────────────────────────
-function parseGridStart(val) {
-  if (!val) return 1;
-  const m = val.match(/^(\d+)/);
-  return m ? +m[1] : 1;
-}
-function parseGridSpan(val) {
-  if (!val) return 1;
-  const m = val.match(/span\s+(\d+)/);
-  return m ? +m[1] : 1;
 }
 
 // ─── SAVE / LOAD LAYOUT ─────────────────────────────────────────
@@ -546,23 +613,17 @@ function saveLayoutConfig() {
   try {
     localStorage.setItem(GOD_STORAGE_KEY, JSON.stringify(layoutConfig));
   } catch(e) {}
-  // Also inject into main state if available
   if (typeof captureState === 'function' && typeof markDirty === 'function') {
-    // Hook into existing state system
-    const origCapture = captureState;
     window._patchLayoutInjected = true;
   }
-  // Inject layoutConfig into window so main state picks it up
   window.__LAYOUT_CONFIG__ = layoutConfig;
 }
 
 function loadLayoutConfig() {
-  // Priority 1: from __BP_STATE__ (baked into HTML)
   if (window.__BP_STATE__ && window.__BP_STATE__.layoutConfig) {
     layoutConfig = window.__BP_STATE__.layoutConfig;
     return;
   }
-  // Priority 2: localStorage
   try {
     const raw = localStorage.getItem(GOD_STORAGE_KEY);
     if (raw) { layoutConfig = JSON.parse(raw); return; }
@@ -575,7 +636,6 @@ function resetLayout() {
   if (!confirm('Reset layout to defaults for all tabs?')) return;
   layoutConfig = {};
   saveLayoutConfig();
-  // Reapply defaults
   Object.entries(ISLAND_DEFAULTS).forEach(([tabId]) => {
     const grid = document.getElementById(tabId + '-island-grid') ||
                  document.querySelector(`#tab-${tabId} .island-grid`);
@@ -595,7 +655,7 @@ function injectGodButton() {
   btn.onclick = toggleGodMode;
   btn.title = 'God mode — drag, resize and arrange islands';
   navRight.insertBefore(btn, navRight.firstChild);
-  // Floating god bar
+  
   const bar = document.createElement('div');
   bar.id = 'god-bar';
   bar.className = 'god-bar';
@@ -626,7 +686,6 @@ function scaffoldTabGrids() {
       grid = document.createElement('div');
       grid.className = 'island-grid';
       grid.id = tabId + '-island-grid';
-      // Move all direct children into grid
       Array.from(tabEl.children).forEach(child => grid.appendChild(child));
       tabEl.appendChild(grid);
     }
@@ -634,7 +693,7 @@ function scaffoldTabGrids() {
   });
 }
 
-// ─── CASH FLOW CALENDAR (replaces old timeline) ──────────────────
+// ─── CASH FLOW CALENDAR (untouched from original patch) ──────────
 function renderCashFlowCalendar() {
   const now = new Date();
   const month = now.getMonth();
@@ -643,9 +702,7 @@ function renderCashFlowCalendar() {
   const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
   const today = now.getDate();
 
-  // Build day→items map
   const dayMap = {};
-  // Access items from main scope
   const allItems = window.items || [];
   allItems.filter(i => i.on && i.dueDay > 0).forEach(item => {
     const d = item.dueDay;
@@ -654,7 +711,6 @@ function renderCashFlowCalendar() {
     dayMap[d].push(item);
   });
 
-  // Calendar HTML
   const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html = `
     <div class="card" style="margin-bottom:14px;">
@@ -698,11 +754,9 @@ function renderCashFlowCalendar() {
       </div>
     </div>`;
 
-  // Find the cashflow tab and replace content
   const cfTab = document.getElementById('tab-cashflow');
   if (!cfTab) return;
 
-  // Replace first card (old timeline) with calendar
   const firstCard = cfTab.querySelector('.card');
   if (firstCard) {
     firstCard.outerHTML = html;
@@ -710,13 +764,11 @@ function renderCashFlowCalendar() {
     cfTab.insertAdjacentHTML('afterbegin', html);
   }
 
-  // Expose day detail function globally
   window.openCfDayDetail = function(day) {
     const panel = document.getElementById('cf-detail-panel');
     const label = document.getElementById('cf-selected-label');
     if (!panel) return;
     const dayItems = dayMap[day] || [];
-    // Highlight selected day
     document.querySelectorAll('.cf-cal-day').forEach(el => el.classList.remove('selected'));
     const selDay = document.querySelector(`.cf-cal-day[data-day="${day}"]`);
     if (selDay) selDay.style.outline = '2px solid var(--accent)';
@@ -771,23 +823,19 @@ function renderCashFlowCalendar() {
   };
 }
 
-// ─── HISTORY BANK DELETE BUTTON ──────────────────────────────────
+// ─── HISTORY BANK DELETE BUTTON (untouched) ──────────────────────
 function patchHistoryBank() {
-  // Patch the renderHistoryBank function to add delete buttons
   const origRender = window.renderHistoryBank;
   window.renderHistoryBank = function() {
     origRender && origRender();
-    // Now add delete buttons to each bank item
     const items = document.querySelectorAll('#history-bank-list .history-bank-item');
     items.forEach(item => {
-      if (item.querySelector('.bank-delete-btn')) return; // already patched
+      if (item.querySelector('.bank-delete-btn')) return;
       const keyEl = item.querySelector('button[onclick*="openConflictModal"]');
       const onclickAttr = keyEl ? keyEl.getAttribute('onclick') : '';
       const keyMatch = onclickAttr.match(/openConflictModal\('([^']+)'\)/);
-      // Get month key from item content
       const label = item.querySelector('span[style*="font-weight"]');
       if (!label) return;
-      // Extract key from the inline text — find matching key in insightHistory
       const labelText = label.textContent.trim();
       let monthKey = null;
       if (window.insightHistory) {
@@ -811,14 +859,11 @@ function patchHistoryBank() {
     });
   };
 
-  // Also override renderHistoryBank to build it with delete buttons inline
-  // by patching the HTML generation
   window.deleteHistoryBankMonth = function(key) {
     const [y, m] = key.split('-');
     const ms = window.MS || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const label = (ms[+m] || m) + ' ' + y;
     if (!confirm(`Delete ${label} from History Bank?\n\nThis will also remove the tracker actuals for that month. This cannot be undone.`)) return;
-    // Remove from all stores
     if (window.insightHistory) delete window.insightHistory[key];
     if (window.pendingConflicts) delete window.pendingConflicts[key];
     if (window.trackerData) delete window.trackerData[key];
@@ -830,7 +875,7 @@ function patchHistoryBank() {
   };
 }
 
-// ─── PATCH CAPTURE STATE (inject layoutConfig) ──────────────────
+// ─── PATCH CAPTURE STATE ─────────────────────────────────────────
 function patchCaptureState() {
   const orig = window.captureState;
   if (!orig) return;
@@ -849,67 +894,63 @@ function patchCaptureState() {
   };
 }
 
-// ─── PATCH SHOW TAB (apply grid when switching) ──────────────────
+// ─── PATCH SHOW TAB (with auto-exit God Mode protection) ─────────
 function patchShowTab() {
   const orig = window.showTab;
   if (!orig) return;
   window.showTab = function(t) {
+    if (godMode) toggleGodMode(); // Safely exit and save configuration if switching tabs
     orig(t);
-    // Re-apply grid positions for this tab after render
     setTimeout(() => {
       const grid = document.getElementById(t + '-island-grid') ||
                    document.querySelector(`#tab-${t} .island-grid`);
       if (grid) applyDefaultGridPositions(t, grid);
-      // If on cashflow, rebuild calendar
       if (t === 'cashflow') renderCashFlowCalendar();
     }, 50);
   };
 }
 
-// ─── HOOK INTO MAIN SITE MASTER DOWNLOAD (add Layout tab) ───────
+// ─── HOOK INTO MAIN SITE MASTER DOWNLOAD ────────────────────────
 function patchSiteMasterDownload() {
   const orig = window.downloadSiteMaster;
   if (!orig) return;
   window.downloadSiteMaster = async function() {
-    // Inject layout into state before download
     window.__LAYOUT_CONFIG__ = layoutConfig;
-    // Call original — it will include layoutConfig via captureState
     await orig();
   };
 }
 
 // ─── INIT ────────────────────────────────────────────────────────
 function init() {
-  // Wait for main site init to complete
   const ready = () => {
     injectStyles();
     loadLayoutConfig();
     wrapIslands();
     scaffoldTabGrids();
-    // Apply dashboard grid
+    
     const dashGrid = document.getElementById('dash-island-grid');
     if (dashGrid) applyDefaultGridPositions('dashboard', dashGrid);
+    
     injectGodButton();
     patchHistoryBank();
     patchCaptureState();
     patchShowTab();
     patchSiteMasterDownload();
-    // Render cash flow calendar immediately if on cashflow tab
+    
     if (document.querySelector('#tab-cashflow.active')) renderCashFlowCalendar();
-    // Re-render history bank to get delete buttons
+    
     if (typeof window.renderHistoryBank === 'function') {
       const origRender = window.renderHistoryBank;
       setTimeout(() => {
         if (typeof origRender === 'function') window.renderHistoryBank();
       }, 300);
     }
-    console.log('[patch v2] loaded — God mode ready, calendar rebuilt, bank delete active');
+    console.log('[patch v3] loaded — Absolute God Mode Canvas Active');
   };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', ready);
   } else {
-    // Site already initialised — wait one tick for its own DOMContentLoaded handlers
     setTimeout(ready, 100);
   }
 }
