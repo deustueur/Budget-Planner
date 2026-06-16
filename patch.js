@@ -503,7 +503,7 @@ function addStaticIds() {
     wrapBlock('ins-templates', [nthInsTitle(6), document.getElementById('templates-list'), ins.querySelector('button[onclick*="saveTemplate"]')]);
   }
 }
-
+}
 function patchMetricsRender() {
   // Protects .gm-wrap containers from being nuked when
   // renderSavings() / renderInstruments() rebuild metric cards.
