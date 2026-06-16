@@ -528,14 +528,16 @@ function addStaticIds() {
     const dulini = cards.find(c => c.innerText.includes('DULINI') && c.innerText.includes('TREND'));
     if (dulini) dulini.id = 'ins-chart-dulini';
     
-    const comb = cards.find(c => c.innerText.includes('COMBINED') && c.innerText.includes('TREND'));
+   const comb = cards.find(c => c.innerText.includes('COMBINED') && c.innerText.includes('TREND'));
     if (comb) comb.id = 'ins-chart-combined';
 
     wrapBlock('ins-templates', [nthInsTitle(6), document.getElementById('templates-list'), ins.querySelector('button[onclick*="saveTemplate"]')]);
   }
 }
-}
-function patchMetricsRender() 
+
+function patchMetricsRender() {
+  // Protects .gm-wrap containers from being nuked when
+  // renderSavings() / renderInstruments() rebuild metric cards.
   // Protects .gm-wrap containers from being nuked when
   // renderSavings() / renderInstruments() rebuild metric cards.
   // Uses BudgetPlanner hooks instead of overwriting functions.
