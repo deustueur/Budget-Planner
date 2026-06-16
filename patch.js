@@ -186,159 +186,6 @@ body.gm-on .gm-wrap:hover .gm-lbl{display:block;}
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 2. ADD STATIC IDs TO ELEMENTS THAT NEED THEM
-// ═══════════════════════════════════════════════════════════════
-function addStaticIds() {
-  // ── Dashboard ──
-  const bbar = document.querySelector('#tab-dashboard .bbar-card');
-  if (bbar && !bbar.id) bbar.id = 'dash-bar';
-  const catChart = document.querySelector('#tab-dashboard .chart-card');
-  if (catChart && !catChart.id) catChart.id = 'dash-cat-chart';
-  const twoColCards = document.querySelectorAll('#tab-dashboard .two-col .card');
-  twoColCards.forEach(c => {
-    if (!c.id && c.querySelector('#global-tbody')) c.id = 'dash-global';
-  });
-
-  // ── Tracker & Events ──
-  const tCard = document.querySelector('#tab-tracker > .card');
-  if (tCard && !tCard.id) tCard.id = 'tracker-card';
-  const eCard = document.querySelector('#tab-events > .card');
-  if (eCard && !eCard.id) eCard.id = 'events-card';
-
-  // ── Cashflow ──
-  // Hunt down the original timeline card using its inner track element
-  const timelineTrack = document.getElementById('cf-track');
-  if (timelineTrack) {
-    const timelineCard = timelineTrack.closest('.card');
-    if (timelineCard && !timelineCard.id) timelineCard.id = 'cf-timeline-card';
-  }
-  
-  const cfTwoCols = document.querySelectorAll('#tab-cashflow .two-col .card');
-  if (cfTwoCols[0]) cfTwoCols[0].id = 'cf-due-card';
-  if (cfTwoCols[1]) cfTwoCols[1].id = 'cf-tax-card';
-  const oldBottomRow = document.getElementById('cf-bottom-row');
-  if (oldBottomRow) oldBottomRow.id = ''; // Disband the chunk wrapper
-
-  // ── Savings Metrics ──
-  const savCards = document.querySelectorAll('#savings-metrics .metric-card');
-  if (savCards[0]) savCards[0].id = 'sav-met-total';
-  if (savCards[1]) savCards[1].id = 'sav-met-trevin';
-  if (savCards[2]) savCards[2].id = 'sav-met-dulini';
-  if (savCards[3]) savCards[3].id = 'sav-met-active';
-
-  // ── Instruments Metrics ──
-  const insCards = document.querySelectorAll('#instr-metrics .metric-card');
-  if (insCards[0]) insCards[0].id = 'ins-met-total';
-  if (insCards[1]) insCards[1].id = 'ins-met-debt';
-  if (insCards[2]) insCards[2].id = 'ins-met-invest';
-
-  // ── Insights ──
-  wrapEl('ins-networth',    document.querySelector('#tab-insights .networth-card'));
-  wrapEl('ins-history',     buildInsBlock([nthInsTitle(0), document.getElementById('history-grid'), document.getElementById('history-detail')]));
-  wrapEl('ins-bank',        buildInsBlock([nthInsTitle(1), document.getElementById('history-bank-list')]));
-  wrapEl('ins-import',      buildInsBlock([nthInsTitle(2), document.querySelector('#tab-insights [style*="display:flex"][style*="gap:8px"]'), document.getElementById('import-panel-local'), document.getElementById('import-panel-drive')]));
-  wrapEl('ins-suggestions', buildInsBlock([nthInsTitle(3), document.getElementById('suggestions-list')]));
-  wrapEl('ins-velocity',    buildInsBlock([nthInsTitle(4), document.getElementById('savings-velocity')]));
-
-  // Split Charts
-  const tc = document.querySelector('#tab-insights .two-col');
-  if (tc) {
-    const cc = tc.querySelectorAll('.chart-card');
-    if (cc[0]) { cc[0].id = 'ins-chart-trevin'; wrapEl('ins-chart-trevin-w', buildInsBlock([nthInsTitle(5), cc[0]])); }
-    if (cc[1]) { cc[1].id = 'ins-chart-dulini'; }
-  }
-  const comb = document.querySelector('#tab-insights .chart-card:not(#ins-chart-trevin):not(#ins-chart-dulini)');
-  if (comb) comb.id = 'ins-chart-combined';
-
-  wrapEl('ins-templates',   buildInsBlock([nthInsTitle(6), document.getElementById('templates-list'), document.querySelector('#tab-insights button[onclick*="saveTemplate"]')]));
-}
-
-function wrapEl(id, el) { if (!el || document.getElementById(id)) return; el.id = id; }
-function buildInsBlock(els) {
-  const valid = els.filter(Boolean);
-  if (!valid.length) return null;
-  const wrap = document.createElement('div');
-  const parent = valid[0].parentNode;
-  parent.insertBefore(wrap, valid[0]);
-  valid.forEach(el => wrap.appendChild(el));
-  return wrap;
-}
-function nthInsTitle(n) { return document.querySelectorAll('#tab-insights .insight-section-title')[n] || null; }
-
-// ═══════════════════════════════════════════════════════════════
-// 2.5. SAFE RENDER PATCHES (Protects God Mode wrappers on redraw)
-// ═══════════════════════════════════════════════════════════════
-function patchMetricsRender() {
-  if (window._gmMetricsPatched) return;
-  window._gmMetricsPatched = true;
-
-  function restoreIsland(wrapId, rawCard, tabId) {
-    let wrap = document.querySelector(`.gm-wrap[data-id="${wrapId}"]`);
-    if (!wrap) {
-      // Rebuild the missing God Mode wrapper safely
-      wrap = document.createElement('div');
-      wrap.className = 'gm-wrap';
-      wrap.dataset.id = wrapId;
-      wrap.dataset.tab = tabId;
-      
-      const handle = document.createElement('div');
-      handle.className = 'gm-handle';
-      handle.innerHTML = '<i class="ti ti-grip-vertical"></i>';
-      handle.title = 'Drag to move';
-      
-      const grip = document.createElement('div');
-      grip.className = 'gm-grip';
-      grip.title = 'Drag to resize';
-      
-      const lbl = document.createElement('div');
-      lbl.className = 'gm-lbl';
-      
-      const defs = TAB_ISLANDS[tabId] || [];
-      const def = defs.find(d => d.id === wrapId);
-      lbl.textContent = def ? def.label : wrapId;
-      
-      wrap.appendChild(handle);
-      wrap.appendChild(grip);
-      wrap.appendChild(lbl);
-      
-      const grid = document.getElementById('gm-grid-' + tabId);
-      if (grid) grid.appendChild(wrap);
-      
-      const saved = (layoutConfig[tabId] || {})[wrapId];
-      const p = saved || def || {col:1, row:1, w:6, h:2};
-      wrap.style.gridColumn = `${p.col} / span ${p.w}`;
-      wrap.style.gridRow    = `${p.row} / span ${p.h}`;
-      if (p.h > 1) wrap.style.minHeight = (p.h * GRID_ROW_H) + 'px';
-    } else {
-      Array.from(wrap.children).forEach(c => {
-        if (!c.classList.contains('gm-handle') && !c.classList.contains('gm-grip') && !c.classList.contains('gm-lbl')) c.remove();
-      });
-    }
-    wrap.appendChild(rawCard);
-  }
-
-  const origRS = window.renderSavings;
-  window.renderSavings = function() {
-    if(origRS) origRS();
-    const cards = document.querySelectorAll('#savings-metrics .metric-card');
-    const ids = ['sav-met-total', 'sav-met-trevin', 'sav-met-dulini', 'sav-met-active'];
-    cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'savings'); } });
-    const metricContainer = document.getElementById('savings-metrics');
-    if (metricContainer) metricContainer.style.display = 'none'; // hide original wrapper
-  };
-
-  const origRI = window.renderInstruments;
-  window.renderInstruments = function() {
-    if(origRI) origRI();
-    const cards = document.querySelectorAll('#instr-metrics .metric-card');
-    const ids = ['ins-met-total', 'ins-met-debt', 'ins-met-invest'];
-    cards.forEach((c, i) => { if (ids[i]) { c.id = ids[i]; restoreIsland(ids[i], c, 'instruments'); } });
-    const metricContainer = document.getElementById('instr-metrics');
-    if (metricContainer) metricContainer.style.display = 'none'; // hide original wrapper
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
 // 3. BUILD GRID PER TAB (wrap islands, set grid positions)
 // ═══════════════════════════════════════════════════════════════
 function buildTabGrids() {
@@ -388,11 +235,54 @@ function buildTabGrids() {
 
       if (wrap.parentElement !== grid) grid.appendChild(wrap);
 
+      // ALWAYS apply explicit position — never leave in auto-placement
       const saved = (layoutConfig[tabId] || {})[def.id];
       const p = saved || def;
       wrap.style.gridColumn = `${p.col} / span ${p.w}`;
       wrap.style.gridRow    = `${p.row} / span ${p.h}`;
-      if (p.h > 1) wrap.style.minHeight = (p.h * GRID_ROW_H) + 'px';
+      wrap.style.minHeight  = (p.h * GRID_ROW_H) + 'px';
+    });
+
+    // PIN every card in this grid — even ones not in TAB_ISLANDS
+    // This prevents auto-placement reflow when one card moves
+    pinAllWraps(grid, tabId);
+  });
+}
+
+// Force-pin every gm-wrap in a grid to its current computed position
+function pinAllWraps(grid, tabId) {
+  grid.querySelectorAll('.gm-wrap').forEach(wrap => {
+    const id = wrap.dataset.id;
+    if (!id) return;
+    const saved = (layoutConfig[tabId] || {})[id];
+    if (saved) {
+      wrap.style.gridColumn = `${saved.col} / span ${saved.w}`;
+      wrap.style.gridRow    = `${saved.row} / span ${saved.h}`;
+      wrap.style.minHeight  = (saved.h * GRID_ROW_H) + 'px';
+    }
+    // If no saved position, the def default was already applied above
+  });
+}
+
+// Call this when entering god mode to lock all current positions
+function lockAllPositions() {
+  document.querySelectorAll('.gm-grid').forEach(grid => {
+    const tabId = grid.id.replace('gm-grid-', '');
+    grid.querySelectorAll('.gm-wrap').forEach(wrap => {
+      const id = wrap.dataset.id;
+      if (!id) return;
+      // Read computed grid position from the element itself
+      const col = pStart(wrap.style.gridColumn) || 1;
+      const row = pStart(wrap.style.gridRow)    || 1;
+      const w   = pSpan(wrap.style.gridColumn)  || 6;
+      const h   = pSpan(wrap.style.gridRow)     || 2;
+      // Write it back explicitly
+      wrap.style.gridColumn = `${col} / span ${w}`;
+      wrap.style.gridRow    = `${row} / span ${h}`;
+      wrap.style.minHeight  = (h * GRID_ROW_H) + 'px';
+      // Record in layoutConfig
+      if (!layoutConfig[tabId]) layoutConfig[tabId] = {};
+      layoutConfig[tabId][id] = { col, row, w, h };
     });
   });
 }
@@ -414,8 +304,15 @@ function toggleGodMode() {
   const bar = document.getElementById('gm-bar');
   if (bar) bar.classList.toggle('on', godMode);
 
-  if (godMode) { drawDots(); bindDrag(); }
-  else         { hideDots(); unbindDrag(); saveLayout(); }
+  if (godMode) {
+    lockAllPositions(); // PIN everything before allowing drag
+    drawDots();
+    bindDrag();
+  } else {
+    hideDots();
+    unbindDrag();
+    saveLayout();
+  }
 }
 window.toggleGodMode = toggleGodMode;
 
@@ -465,23 +362,37 @@ function startDrag(e) {
   const wrap = e.currentTarget.closest('.gm-wrap');
   const grid = wrap && wrap.closest('.gm-grid');
   if (!wrap || !grid) return;
-  
+
+  // Lock ALL positions in this grid before we start moving anything
+  const tabId = grid.id.replace('gm-grid-', '');
+  grid.querySelectorAll('.gm-wrap').forEach(w => {
+    const wid = w.dataset.id;
+    if (!wid) return;
+    const col = pStart(w.style.gridColumn) || 1;
+    const row = pStart(w.style.gridRow)    || 1;
+    const ww  = pSpan(w.style.gridColumn)  || 6;
+    const hh  = pSpan(w.style.gridRow)     || 2;
+    w.style.gridColumn = `${col} / span ${ww}`;
+    w.style.gridRow    = `${row} / span ${hh}`;
+  });
+
   const cx = e.touches ? e.touches[0].clientX : e.clientX;
   const cy = e.touches ? e.touches[0].clientY : e.clientY;
-  
+  const gr = grid.getBoundingClientRect();
+
   wrap.classList.add('dragging');
-  wrap.style.zIndex = '999'; // Bring to front while dragging
-  
+  wrap.style.zIndex = '999';
+
   dragState = {
-    wrap, grid,
+    wrap, grid, gr,
     startX: cx,
     startY: cy,
-    w: pSpan(wrap.style.gridColumn),
-    h: pSpan(wrap.style.gridRow),
+    w:  pSpan(wrap.style.gridColumn),
+    h:  pSpan(wrap.style.gridRow),
     sc: pStart(wrap.style.gridColumn),
-    sr: pStart(wrap.style.gridRow)
+    sr: pStart(wrap.style.gridRow),
   };
-  
+
   document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup',   endDrag);
   document.addEventListener('touchmove', onDrag,  { passive: false });
@@ -493,40 +404,56 @@ function onDrag(e) {
   e.preventDefault();
   const cx = e.touches ? e.touches[0].clientX : e.clientX;
   const cy = e.touches ? e.touches[0].clientY : e.clientY;
-  
   const dx = cx - dragState.startX;
   const dy = cy - dragState.startY;
-  
-  // Smooth CSS transform glide instead of fighting CSS Grid reflow
+  // Visual glide — no grid reflow during drag
   dragState.wrap.style.transform = `translate(${dx}px, ${dy}px)`;
 }
 
 function endDrag(e) {
   if (!dragState) return;
   const { wrap, grid, startX, startY, w, h, sc, sr } = dragState;
-  
+
   const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
   const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
-  
+
   const dx = cx - startX;
   const dy = cy - startY;
-  const cw = grid.getBoundingClientRect().width / GRID_COLS;
-  
-  // Snap to final grid position
+
+  // Use grid bounding rect for accurate column width
+  const gr  = grid.getBoundingClientRect();
+  const cw  = gr.width / GRID_COLS;
+
   const colOffset = Math.round(dx / cw);
   const rowOffset = Math.round(dy / GRID_ROW_H);
+
   const newCol = Math.max(1, Math.min(GRID_COLS - w + 1, sc + colOffset));
   const newRow = Math.max(1, sr + rowOffset);
-  
-  wrap.style.transform = '';
-  wrap.style.zIndex = '';
+
+  // Clear transform FIRST, then apply grid position
+  wrap.style.transform   = '';
+  wrap.style.zIndex      = '';
   wrap.classList.remove('dragging');
-  
-  wrap.style.gridColumn = `${newCol} / span ${w}`;
-  wrap.style.gridRow    = `${newRow} / span ${h}`;
-  
+
+  wrap.style.gridColumn  = `${newCol} / span ${w}`;
+  wrap.style.gridRow     = `${newRow} / span ${h}`;
+  wrap.style.minHeight   = (h * GRID_ROW_H) + 'px';
+
+  // Record and immediately re-pin ALL cards so nothing reflows
   recordPos(wrap);
-  
+  const tabId = grid.id.replace('gm-grid-', '');
+  grid.querySelectorAll('.gm-wrap').forEach(ow => {
+    if (ow === wrap) return;
+    const oid = ow.dataset.id;
+    if (!oid) return;
+    const saved = (layoutConfig[tabId] || {})[oid];
+    if (saved) {
+      ow.style.gridColumn = `${saved.col} / span ${saved.w}`;
+      ow.style.gridRow    = `${saved.row} / span ${saved.h}`;
+      ow.style.minHeight  = (saved.h * GRID_ROW_H) + 'px';
+    }
+  });
+
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup',   endDrag);
   document.removeEventListener('touchmove', onDrag);
@@ -556,7 +483,7 @@ function startResize(e) {
 function onResize(e) {
   if (!resizeState) return;
   const { wrap, gr, sx, sy, sw, sh, sc, sr } = resizeState;
-  const cw  = gr.width / GRID_COLS;
+  const cw   = gr.width / GRID_COLS;
   const newW = Math.max(3, Math.min(GRID_COLS - sc + 1, sw + Math.round((e.clientX - sx) / cw)));
   const newH = Math.max(1, sh + Math.round((e.clientY - sy) / GRID_ROW_H));
   wrap.style.gridColumn = `${sc} / span ${newW}`;
@@ -567,24 +494,28 @@ function onResize(e) {
 function endResize() {
   if (!resizeState) return;
   recordPos(resizeState.wrap);
+  // Re-pin all others after resize too
+  const wrap  = resizeState.wrap;
+  const grid  = wrap.closest('.gm-grid');
+  const tabId = grid ? grid.id.replace('gm-grid-', '') : '';
+  if (grid && tabId) {
+    grid.querySelectorAll('.gm-wrap').forEach(ow => {
+      if (ow === wrap) return;
+      const oid = ow.dataset.id;
+      if (!oid) return;
+      const saved = (layoutConfig[tabId] || {})[oid];
+      if (saved) {
+        ow.style.gridColumn = `${saved.col} / span ${saved.w}`;
+        ow.style.gridRow    = `${saved.row} / span ${saved.h}`;
+        ow.style.minHeight  = (saved.h * GRID_ROW_H) + 'px';
+      }
+    });
+  }
   document.removeEventListener('mousemove', onResize);
   document.removeEventListener('mouseup',   endResize);
   resizeState = null;
 }
-
-function recordPos(wrap) {
-  const id  = wrap.dataset.id;
-  const tab = wrap.dataset.tab;
-  if (!id || !tab) return;
-  if (!layoutConfig[tab]) layoutConfig[tab] = {};
-  layoutConfig[tab][id] = {
-    col: pStart(wrap.style.gridColumn),
-    row: pStart(wrap.style.gridRow),
-    w:   pSpan(wrap.style.gridColumn),
-    h:   pSpan(wrap.style.gridRow),
-  };
-}
-
+  
 function pStart(v) { const m = (v||'').match(/^(\d+)/);       return m ? +m[1] : 1; }
 function pSpan(v)  { const m = (v||'').match(/span\s+(\d+)/); return m ? +m[1] : 1; }
 
