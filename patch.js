@@ -859,4 +859,4 @@ window.addEventListener('touchend', e => { if(dragState)endDrag(e);   if(resizeS
 window.toggleGodMode = toggleGodMode;
 window.resetLayout   = resetLayout;
 
-})();
+);
