@@ -675,6 +675,19 @@ function endResize() {
   resizeState = null;
 }
   
+function recordPos(wrap) {
+  const id  = wrap.dataset.id;
+  const tab = wrap.dataset.tab;
+  if (!id || !tab) return;
+  if (!layoutConfig[tab]) layoutConfig[tab] = {};
+  layoutConfig[tab][id] = {
+    col: pStart(wrap.style.gridColumn),
+    row: pStart(wrap.style.gridRow),
+    w:   pSpan(wrap.style.gridColumn),
+    h:   pSpan(wrap.style.gridRow),
+  };
+}
+
 function pStart(v) { const m = (v||'').match(/^(\d+)/);       return m ? +m[1] : 1; }
 function pSpan(v)  { const m = (v||'').match(/span\s+(\d+)/); return m ? +m[1] : 1; }
 
@@ -1040,3 +1053,5 @@ window.addEventListener('touchend', e => {
   if (window._getDragState && window._getDragState())   window._endDrag(e);
   if (window._getResizeState && window._getResizeState()) window._endResize();
 });
+
+})();
