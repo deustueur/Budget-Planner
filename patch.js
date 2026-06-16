@@ -535,7 +535,7 @@ function addStaticIds() {
   }
 }
 }
-function patchMetricsRender() {
+function patchMetricsRender() 
   // Protects .gm-wrap containers from being nuked when
   // renderSavings() / renderInstruments() rebuild metric cards.
   // Uses BudgetPlanner hooks instead of overwriting functions.
