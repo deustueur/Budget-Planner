@@ -364,8 +364,7 @@ function injectStyles() {
 #gm-dot-canvas{position:fixed;inset:0;pointer-events:none;z-index:1;
   opacity:0;transition:opacity .3s;}
 body.gm-on #gm-dot-canvas{opacity:1;}
-.gm-grid{display:grid;grid-template-columns:repeat(24,1fr);
-  gap:14px;align-items:start;grid-auto-flow:dense;}
+.gm-grid{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:14px;align-items:start;grid-auto-flow:dense;min-width:0;width:100%;}
 .gm-wrap{position:relative;border-radius:var(--radius-lg);min-width:0;}
 body.gm-on .gm-wrap{outline:1.5px dashed transparent;transition:outline .15s,box-shadow .15s;}
 body.gm-on .gm-wrap:hover{outline-color:rgba(127,119,221,0.55);
