@@ -52,6 +52,20 @@ const GRID_COLS  = 24;
 const GRID_ROW_H = 80;
 const LS_LAYOUT  = 'bp_layout_v5';
 
+// ─── EXECUTION GUARD & SITE OVERRIDE ────────────────────────────
+// This forces the script to ignore site-native re-renders until we are ready
+Object.defineProperty(window, 'BudgetPlanner', {
+    configurable: true,
+    get: function() { return window._bp_cache; },
+    set: function(val) {
+        window._bp_cache = val;
+        if (val && !val._patched) {
+            val._patched = true;
+            console.log('[patch] 🛡️ Guard Active: BudgetPlanner intercepted.');
+        }
+    }
+});
+
 // ─── ISLAND DEFINITIONS ─────────────────────────────────────────
 // Maps each tab to its draggable islands.
 // col/row = grid start position, w/h = span in grid units.
