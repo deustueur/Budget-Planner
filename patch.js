@@ -53,12 +53,12 @@ const GRID_ROW_H = 80;
 const LS_LAYOUT  = 'bp_layout_v5';
 
 // ─── EXECUTION GUARD & SITE OVERRIDE ────────────────────────────
-// This forces the script to ignore site-native re-renders until we are ready
-(function initGuard() {
-    const descriptor = Object.getOwnPropertyDescriptor(window, 'BudgetPlanner');
+// Defer guard until BudgetPlanner is actually available
+window.addEventListener('DOMContentLoaded', () => {
+    const originalBP = window.BudgetPlanner;
     Object.defineProperty(window, 'BudgetPlanner', {
         configurable: true,
-        get: function() { return window._bp_cache || (descriptor ? descriptor.get.call(window) : undefined); },
+        get: function() { return window._bp_cache || originalBP; },
         set: function(val) {
             window._bp_cache = val;
             if (val && !val._patched) {
@@ -67,7 +67,20 @@ const LS_LAYOUT  = 'bp_layout_v5';
             }
         }
     });
-})();
+});
+
+// ─── GLOBAL UTILITIES ───────────────────────────────────────────
+// Promoting functions to window scope to fix ReferenceErrors
+window.wrapBlock = function(id, els) {
+    if (document.getElementById(id)) return;
+    const valid = els.filter(Boolean);
+    if (!valid.length) return;
+    const wrap = document.createElement('div');
+    wrap.id = id;
+    const parent = valid[0].parentNode;
+    parent.insertBefore(wrap, valid[0]);
+    valid.forEach(el => wrap.appendChild(el));
+};
 
     
 // ─── ISLAND DEFINITIONS ─────────────────────────────────────────
