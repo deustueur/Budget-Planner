@@ -14,8 +14,8 @@
 //   window.BudgetPlanner.*
 //
 // That object is defined at the bottom of index.html and exposes:
-//   .state.*          — live getters/setters for all state objects
-//   .tabs.*           — references to each tab's DOM element
+//   .state.* — live getters/setters for all state objects
+//   .tabs.* — references to each tab's DOM element
 //   .onAfterRender    — hook: set to a function, called after every recalc()
 //   .onTabSwitch      — hook: set to a function, called after showTab(t)
 //   .onSaveComplete   — hook: set to a function, called after saveAll()
@@ -54,18 +54,22 @@ const LS_LAYOUT  = 'bp_layout_v5';
 
 // ─── EXECUTION GUARD & SITE OVERRIDE ────────────────────────────
 // This forces the script to ignore site-native re-renders until we are ready
-Object.defineProperty(window, 'BudgetPlanner', {
-    configurable: true,
-    get: function() { return window._bp_cache; },
-    set: function(val) {
-        window._bp_cache = val;
-        if (val && !val._patched) {
-            val._patched = true;
-            console.log('[patch] 🛡️ Guard Active: BudgetPlanner intercepted.');
+(function initGuard() {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'BudgetPlanner');
+    Object.defineProperty(window, 'BudgetPlanner', {
+        configurable: true,
+        get: function() { return window._bp_cache || (descriptor ? descriptor.get.call(window) : undefined); },
+        set: function(val) {
+            window._bp_cache = val;
+            if (val && !val._patched) {
+                val._patched = true;
+                console.log('[patch] 🛡️ Guard Active: BudgetPlanner intercepted.');
+            }
         }
-    }
-});
+    });
+})();
 
+    
 // ─── ISLAND DEFINITIONS ─────────────────────────────────────────
 // Maps each tab to its draggable islands.
 // col/row = grid start position, w/h = span in grid units.
