@@ -469,6 +469,11 @@ function toggleGodMode() {
 }
 window.toggleGodMode = toggleGodMode;
 
+window._endDrag   = endDrag;
+window._endResize = endResize;
+window._getDragState   = () => dragState;
+window._getResizeState = () => resizeState;
+
 function drawDots() {
   let cv = document.getElementById('gm-dot-canvas');
   if (!cv) { cv = document.createElement('canvas'); cv.id = 'gm-dot-canvas'; document.body.appendChild(cv); }
@@ -1028,12 +1033,10 @@ if (document.readyState === 'loading') {
 
 // Safety net — catches mouseup even if pointer left the window
 window.addEventListener('mouseup', e => {
-  if (dragState)   endDrag(e);
-  if (resizeState) endResize();
+  if (window._getDragState && window._getDragState())   window._endDrag(e);
+  if (window._getResizeState && window._getResizeState()) window._endResize();
 });
 window.addEventListener('touchend', e => {
-  if (dragState)   endDrag(e);
-  if (resizeState) endResize();
+  if (window._getDragState && window._getDragState())   window._endDrag(e);
+  if (window._getResizeState && window._getResizeState()) window._endResize();
 });
-
-})();
