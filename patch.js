@@ -366,7 +366,7 @@ function injectStyles() {
 body.gm-on #gm-dot-canvas{opacity:1;}
 .gm-grid{display:grid;grid-template-columns:repeat(24,1fr);
   gap:14px;align-items:start;grid-auto-flow:dense;}
-.gm-wrap{position:relative;border-radius:var(--radius-lg);}
+.gm-wrap{position:relative;border-radius:var(--radius-lg);min-width:0;}
 body.gm-on .gm-wrap{outline:1.5px dashed transparent;transition:outline .15s,box-shadow .15s;}
 body.gm-on .gm-wrap:hover{outline-color:rgba(127,119,221,0.55);
   box-shadow:0 0 0 4px rgba(127,119,221,0.09);z-index:10;}
