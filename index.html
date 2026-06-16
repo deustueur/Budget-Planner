@@ -2520,6 +2520,84 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Run init
   init();
 });
+// ════════════════════════════════════════════════════════════════
+// BUDGET PLANNER PUBLIC API (The Bridge for Patch.js)
+// ════════════════════════════════════════════════════════════════
+window.BudgetPlanner = {
+  onAfterRender: null,
+  onTabSwitch:   null,
+  onSaveComplete:null,
+
+  state:{
+    get items()            { return items; },
+    set items(v)           { items=v; },
+    get trackerData()      { return trackerData; },
+    set trackerData(v)     { trackerData=v; },
+    get savingsStreams()   { return savingsStreams; },
+    get instruments()      { return instruments; },
+    set instruments(v)     { instruments=v; },
+    get txEvents()         { return txEvents; },
+    set txEvents(v)        { txEvents=v; },
+    get monthHistory()     { return monthHistory; },
+    set monthHistory(v)    { monthHistory=v; },
+    get monthNotes()       { return monthNotes; },
+    set monthNotes(v)      { monthNotes=v; },
+    get insightHistory()   { return insightHistory; },
+    set insightHistory(v)  { insightHistory=v; },
+    get pendingConflicts() { return pendingConflicts; },
+    set pendingConflicts(v){ pendingConflicts=v; },
+    get templates()        { return templates; },
+    get accountBalance()   { return accountBalance; },
+    get activeProfile()    { return activeProfile; },
+    get currencySymbol()   { return currencySymbol; },
+    get layoutConfig()     { return layoutConfig; },
+    set layoutConfig(v)    { layoutConfig=v; },
+  },
+
+  tabs:{
+    get dashboard()   { return document.getElementById('tab-dashboard'); },
+    get cashflow()    { return document.getElementById('tab-cashflow'); },
+    get tracker()     { return document.getElementById('tab-tracker'); },
+    get events()      { return document.getElementById('tab-events'); },
+    get savings()     { return document.getElementById('tab-savings'); },
+    get instruments() { return document.getElementById('tab-instruments'); },
+    get insights()    { return document.getElementById('tab-insights'); },
+    get navRight()    { return document.querySelector('.nav-right'); },
+  },
+
+  fmt:          (n)   => fmt(n),
+  fmtC:         (n)   => fmtC(n),
+  toMonthly:    (v,f) => toMonthly(v,f),
+  getDaysUntil: (d)   => getDaysUntil(d),
+  MS: typeof MS !== 'undefined' ? MS : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  MONTHS: typeof MONTHS !== 'undefined' ? MONTHS : ['January','February','March','April','May','June','July','August','September','October','November','December'],
+
+  recalc:              () => recalc(),
+  markDirty:           () => markDirty(),
+  buildNotifications:  () => buildNotifications(),
+  renderInsights:      () => renderInsights(),
+  renderSavings:       () => renderSavings(),
+  renderInstruments:   () => renderInstruments(),
+  renderHistoryGrid:   () => renderHistoryGrid(),
+  renderHistoryBank:   () => renderHistoryBank(),
+  captureState:        () => captureState(),
+  applyState:          (s) => applyState(s),
+  showTab:             (t) => showTab(t),
+  deleteHistoryMonth:  (k) => deleteHistoryMonth(k),
+};
+
+function deleteHistoryMonth(key){
+  const[y,mi]=key.split('-');
+  if(!confirm('Delete '+(window.BudgetPlanner.MS[+mi]||mi)+' '+y+' from History Bank?\n\nRemoves tracker actuals, history snapshot and bank entry. Cannot be undone.'))return;
+  if(typeof insightHistory !== 'undefined')  delete insightHistory[key];
+  if(typeof pendingConflicts !== 'undefined')delete pendingConflicts[key];
+  if(typeof trackerData !== 'undefined')     delete trackerData[key];
+  if(typeof monthHistory !== 'undefined')    delete monthHistory[key];
+  if(typeof monthNotes !== 'undefined')      delete monthNotes[key];
+  markDirty();
+  renderInsights();
+  buildNotifications();
+}
 </script>
 <script src="patch.js"></script>
 </body>
