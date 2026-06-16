@@ -493,6 +493,7 @@ function hideDots() {
 // 5. DRAG
 // ═══════════════════════════════════════════════════════════════
 function bindDrag() {
+  unbindDrag();
   document.querySelectorAll('.gm-handle').forEach(h => {
     h.addEventListener('mousedown', startDrag);
     h.addEventListener('touchstart', startDrag, { passive: false });
@@ -668,6 +669,16 @@ function endResize() {
   document.removeEventListener('mouseup',   endResize);
   resizeState = null;
 }
+
+// Safety net — catches mouseup even if pointer left the window
+window.addEventListener('mouseup', e => {
+  if (dragState)   endDrag(e);
+  if (resizeState) endResize();
+});
+window.addEventListener('touchend', e => {
+  if (dragState)   endDrag(e);
+  if (resizeState) endResize();
+});
   
 function pStart(v) { const m = (v||'').match(/^(\d+)/);       return m ? +m[1] : 1; }
 function pSpan(v)  { const m = (v||'').match(/span\s+(\d+)/); return m ? +m[1] : 1; }
