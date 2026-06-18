@@ -930,6 +930,8 @@ function patchInit() {
   patchMetricsRender();
   patchBank();
   patchShowTab();
+  // Trigger renderHistoryBank after patchBank so addX fires on already-rendered list
+  setTimeout(()=>{ if(window.BudgetPlanner)window.BudgetPlanner.renderHistoryBank(); },300);
   patchState();
   
   const origRender = window.BudgetPlanner.onAfterRender;
