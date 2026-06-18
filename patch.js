@@ -830,6 +830,27 @@ function patchShowTab() {
   const origHook = window.BudgetPlanner.onTabSwitch;
   window.BudgetPlanner.onTabSwitch = function(t) {
     if (t === 'cashflow') setTimeout(renderCalendar, 60);
+    if (t === 'insights') setTimeout(()=>{
+      const list=document.getElementById('history-bank-list');
+      if(!list)return;
+      const MS=window.BudgetPlanner.MS;
+      const insHistory=window.BudgetPlanner.state.insightHistory;
+      list.querySelectorAll('.history-bank-item').forEach(card=>{
+        if(card.querySelector('.bx'))return;
+        const span=card.querySelector('span[style*="font-weight"]');
+        const txt=span?span.textContent.trim():'';
+        const key=Object.keys(insHistory||{}).find(k=>{
+          const [y,mi]=k.split('-');
+          return (MS[+mi]+' '+y)===txt;
+        });
+        if(!key)return;
+        const btn=document.createElement('button');
+        btn.className='bx';btn.title='Delete this month';btn.innerHTML='✕';
+        btn.onclick=ev=>{ev.stopPropagation();window.BudgetPlanner.deleteHistoryMonth(key);};
+        card.style.position='relative';
+        card.appendChild(btn);
+      });
+    },400);
     if (godMode) setTimeout(bindDrag, 120);
     if (origHook) origHook(t);
   };
