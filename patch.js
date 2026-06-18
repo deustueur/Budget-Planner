@@ -89,7 +89,8 @@ window.wrapBlock = function(id, els) {
 // All IDs must exist as static element IDs in index.html.
 const TAB_ISLANDS = {
   dashboard: [
-    { id:'dash-metrics',       label:'Metrics',         col:1,  row:1,  w:24, h:2 },
+    { id:'events-banner',      label:'Events banner',   col:1,  row:1,  w:24, h:1 },
+    { id:'dash-metrics',       label:'Metrics',         col:1,  row:2,  w:24, h:2 },
     { id:'dash-bar',           label:'Budget bar',      col:1,  row:3,  w:24, h:1 },
     { id:'dash-savings-panel', label:'Tagged savings',  col:1,  row:4,  w:24, h:3 },
     { id:'income-card',        label:'Income',          col:1,  row:7,  w:12, h:7 },
@@ -129,7 +130,8 @@ const TAB_ISLANDS = {
     { id:'ins-chart-trevin',   label:'Trevin trend',    col:1,  row:15, w:12, h:5 },
     { id:'ins-chart-dulini',   label:'Dulini trend',    col:13, row:15, w:12, h:5 },
     { id:'ins-chart-combined', label:'Combined trend',  col:1,  row:20, w:24, h:5 },
-    { id:'ins-templates',      label:'Templates',       col:1,  row:25, w:24, h:3 },
+    { id:'ins-charts',         label:'Person trends',   col:1,  row:15, w:24, h:5 },
+    { id:'ins-templates',      label:'Templates',       col:1,  row:20, w:24, h:3 },
   ],
 };
 
@@ -749,26 +751,38 @@ function renderCalendar() {
 function patchBank() {
   if (window._gmBank) return;
   window._gmBank = true;
+  // Guard cleared on reload — safe to re-patch
   if (!window.BudgetPlanner) return;
   
   const origRHB = window.BudgetPlanner.renderHistoryBank;
   const origRI  = window.BudgetPlanner.renderInsights;
 
   function addX() {
-    const grid = document.getElementById('history-grid');
-    if (!grid) return;
-    
-    grid.querySelectorAll('.history-card').forEach(card => {
-      if (card.querySelector('.bx')) return; 
-      
-      card.style.position = 'relative'; 
-      
+    const list = document.getElementById('history-bank-list');
+    if (!list) return;
+    list.querySelectorAll('.history-bank-item').forEach(card => {
+      if (card.querySelector('.bx')) return;
+      card.style.position = 'relative';
       let key = null;
-      const onclickAttr = card.getAttribute('onclick') || '';
-      const m = onclickAttr.match(/loadHistoryDetail\('([^']+)'/);
-      if (m) key = m[1];
-      
-      if (!key) return; 
+      // Try conflict resolve button first
+      const resolveBtn = card.querySelector('button[onclick*="openConflictModal"]');
+      if (resolveBtn) {
+        const m = resolveBtn.getAttribute('onclick').match(/openConflictModal\('([^']+)'\)/);
+        if (m) key = m[1];
+      }
+      // Fall back to month label text match against insightHistory
+      if (!key) {
+        const span = card.querySelector('span[style*="font-weight"]');
+        if (span && window.BudgetPlanner && window.BudgetPlanner.state.insightHistory) {
+          const txt = span.textContent.trim();
+          const MS  = window.BudgetPlanner.MS;
+          key = Object.keys(window.BudgetPlanner.state.insightHistory).find(k=>{
+            const [y,mi]=k.split('-');
+            return (MS[+mi]+' '+y)===txt;
+          });
+        }
+      }
+      if (!key) return;
 
       const btn = document.createElement('button');
       btn.className = 'bx';
@@ -847,6 +861,54 @@ function patchState() {
 // INIT — runs 200ms after DOMContentLoaded to ensure html
 // engine has fully initialised before patch plugs in.
 // ═══════════════════════════════════════════════════════════════
+
+function dissolveWrappers() {
+  // Remove dead two-col/container divs whose children are already gm-wrapped.
+  // This prevents double-nesting which causes clipping.
+  ['dash-income-expense-row','dash-chart-global-row','cf-bottom-row'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (!el) return;
+    const parent = el.parentNode;
+    // Move all children up to parent level, then remove the wrapper
+    Array.from(el.children).forEach(child => parent.insertBefore(child, el));
+    el.remove();
+  });
+  // Fix loose card-head divs in savings and instruments (no id, class=card-head)
+  ['gm-grid-savings','gm-grid-instruments'].forEach(gridId=>{
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    Array.from(grid.children).forEach(el=>{
+      if (el.classList.contains('card-head') && !el.classList.contains('gm-wrap')) {
+        // Wrap it so it gets grid placement
+        const wrap = document.createElement('div');
+        wrap.className = 'gm-wrap';
+        wrap.dataset.id = gridId+'-header';
+        wrap.dataset.tab = gridId.replace('gm-grid-','');
+        el.parentNode.insertBefore(wrap, el);
+        wrap.appendChild(el);
+      }
+    });
+  });
+  // Wrap loose insights elements (section-title, two-col charts, balance chart)
+  const insGrid = document.getElementById('gm-grid-insights');
+  if (insGrid) {
+    // Find and wrap the charts two-col and standalone chart-card into ins-charts
+    if (!document.getElementById('ins-charts')) {
+      const loose = Array.from(insGrid.children).filter(el=>
+        !el.classList.contains('gm-wrap') &&
+        (el.classList.contains('two-col') || el.classList.contains('chart-card') ||
+         el.classList.contains('insight-section-title') || (!el.className && !el.id))
+      );
+      if (loose.length) {
+        const wrap = document.createElement('div');
+        wrap.id = 'ins-charts';
+        insGrid.insertBefore(wrap, loose[0]);
+        loose.forEach(el => wrap.appendChild(el));
+      }
+    }
+  }
+}
+
 function patchInit() {
   if (!window.BudgetPlanner) {
     console.error('[patch] window.BudgetPlanner not found.');
@@ -859,9 +921,10 @@ function patchInit() {
   const track = document.getElementById('cf-track');
   if (track && track.closest('.card')) { track.closest('.card').id = 'cf-timeline-card'; }
   
-  buildCalendarCard(); 
-  addStaticIds();      
-  buildTabGrids();     
+  buildCalendarCard();
+  addStaticIds();
+  dissolveWrappers();
+  buildTabGrids();
   
   injectGodUI();
   patchMetricsRender();
