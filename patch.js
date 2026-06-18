@@ -1,3 +1,7 @@
+// insightHistory alignment patch
+window.addEventListener('load',()=>{
+  try{const _s=localStorage.getItem('bp_state_v8');if(_s){const _p=JSON.parse(_s);if(_p.insightHistory){window.insightHistory=_p.insightHistory;if(typeof insightHistory!=='undefined')insightHistory=_p.insightHistory;}}}catch(e){}
+});
 // ═══════════════════════════════════════════════════════════════════
 // BUDGET PLANNER — patch.js
 // ═══════════════════════════════════════════════════════════════════
@@ -978,4 +982,57 @@ window.addEventListener('touchend', e => { if(dragState)endDrag(e);   if(resizeS
 window.toggleGodMode = toggleGodMode;
 window.resetLayout   = resetLayout;
 
+})();
+
+// ── HISTORY BANK DELETE BUTTONS ──────────────────────────────────
+(function(){
+  const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function addDelBtns(){
+    const list=document.getElementById('history-bank-list');
+    if(!list)return;
+    const ih=window.insightHistory||(typeof insightHistory!=='undefined'?insightHistory:{});
+    Array.from(list.children).forEach(item=>{
+      if(item.querySelector('.hb-del'))return;
+      const text=item.textContent.trim();
+      let key=null;
+      Object.keys(ih).forEach(k=>{const[y,m]=k.split('-');if(text.includes(MS[+m])&&text.includes(y))key=k;});
+      if(!key)return;
+      const btn=document.createElement('button');
+      btn.className='hb-del';
+      btn.innerHTML='&times;';
+      btn.setAttribute('data-key',key);
+      btn.style.cssText='width:22px;height:22px;border-radius:50%;border:1px solid var(--danger);background:var(--danger-light);color:var(--danger);cursor:pointer;font-size:16px;font-weight:700;line-height:1;flex-shrink:0;margin-left:6px;padding:0;display:inline-flex;align-items:center;justify-content:center;';
+      btn.onclick=function(e){
+        e.stopPropagation();
+        const k=this.getAttribute('data-key');
+        const[y,m]=k.split('-');
+        if(!confirm('Delete '+MS[+m]+' '+y+' from history bank?'))return;
+        const ih2=window.insightHistory||(typeof insightHistory!=='undefined'?insightHistory:{});
+        delete ih2[k];
+        if(window.insightHistory)window.insightHistory=ih2;
+        if(typeof insightHistory!=='undefined')insightHistory=ih2;
+        if(window.monthHistory)delete window.monthHistory[k];
+        if(window.trackerData)delete window.trackerData[k];
+        if(typeof lsSave==='function')lsSave();
+        this.closest('.history-bank-item').remove();
+      };
+      item.style.cssText+=(item.style.cssText?';':'')+'display:flex;align-items:center;';
+      item.appendChild(btn);
+    });
+  }
+  window.addEventListener('load',()=>{
+    setTimeout(()=>{
+      const origRHB=window.renderHistoryBank;
+      window.renderHistoryBank=function(){
+        if(origRHB)origRHB();
+        setTimeout(addDelBtns,50);
+      };
+      const origST=window.showTab;
+      window.showTab=function(t){
+        if(origST)origST(t);
+        if(t==='insights')setTimeout(addDelBtns,200);
+      };
+      addDelBtns();
+    },800);
+  });
 })();
