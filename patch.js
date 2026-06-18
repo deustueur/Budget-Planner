@@ -1143,3 +1143,61 @@ window.resetLayout   = resetLayout;
   myRenderHistoryBank();
   addGridX();
 })();
+
+// ── RE-RUN dissolveWrappers ON TAB SWITCH ──
+// dissolveWrappers() runs at patchInit but insights elements don't exist yet.
+// They're only created when renderInsights() fires on first tab visit.
+// This hook catches that and wraps them immediately after.
+(function(){
+  const origOnTab = window.BudgetPlanner && window.BudgetPlanner.onTabSwitch;
+  if(!window.BudgetPlanner) return;
+  window.BudgetPlanner.onTabSwitch = function(t) {
+    if(origOnTab) origOnTab(t);
+    if(t === 'insights') {
+      setTimeout(function(){
+        const insGrid = document.getElementById('gm-grid-insights');
+        if(!insGrid) return;
+        // Wrap loose elements into ins-charts
+        if(!document.getElementById('ins-charts')) {
+          const loose = Array.from(insGrid.children).filter(el=>
+            !el.classList.contains('gm-wrap') &&
+            (el.classList.contains('two-col') || el.classList.contains('chart-card') ||
+             el.classList.contains('insight-section-title') || (!el.className && !el.id))
+          );
+          if(loose.length) {
+            const wrap = document.createElement('div');
+            wrap.id = 'ins-charts';
+            insGrid.insertBefore(wrap, loose[0]);
+            loose.forEach(el => wrap.appendChild(el));
+            const gmWrap = document.createElement('div');
+            gmWrap.className = 'gm-wrap';
+            gmWrap.dataset.id = 'ins-charts';
+            gmWrap.dataset.tab = 'insights';
+            const saved = (window.__LAYOUT_CONFIG__ && window.__LAYOUT_CONFIG__.insights && window.__LAYOUT_CONFIG__.insights['ins-charts']);
+            const p = saved || {col:1,row:15,w:24,h:5};
+            gmWrap.style.gridColumn = p.col+' / span '+p.w;
+            gmWrap.style.gridRow    = p.row+' / span '+p.h;
+            gmWrap.style.minHeight  = (p.h*80)+'px';
+            wrap.parentNode.insertBefore(gmWrap, wrap);
+            gmWrap.appendChild(wrap);
+          }
+        }
+        // Wrap loose card-heads in savings and instruments
+        ['gm-grid-savings','gm-grid-instruments'].forEach(gridId=>{
+          const grid = document.getElementById(gridId);
+          if(!grid) return;
+          Array.from(grid.children).filter(el=>
+            el.classList.contains('card-head') && !el.classList.contains('gm-wrap')
+          ).forEach(el=>{
+            const wrap = document.createElement('div');
+            wrap.className = 'gm-wrap';
+            wrap.dataset.id = gridId+'-header';
+            wrap.dataset.tab = gridId.replace('gm-grid-','');
+            el.parentNode.insertBefore(wrap, el);
+            wrap.appendChild(el);
+          });
+        });
+      }, 150);
+    }
+  };
+})();
