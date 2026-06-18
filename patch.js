@@ -984,55 +984,82 @@ window.resetLayout   = resetLayout;
 
 })();
 
-// ── HISTORY BANK DELETE BUTTONS ──────────────────────────────────
+// ── HISTORY BANK SYNC (monthHistory as source of truth) ─────────
 (function(){
-  const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  function addDelBtns(){
-    const list=document.getElementById('history-bank-list');
-    if(!list)return;
-    const ih=window.insightHistory||(typeof insightHistory!=='undefined'?insightHistory:{});
-    Array.from(list.children).forEach(item=>{
-      if(item.querySelector('.hb-del'))return;
-      const text=item.textContent.trim();
-      let key=null;
-      Object.keys(ih).forEach(k=>{const[y,m]=k.split('-');if(text.includes(MS[+m])&&text.includes(y))key=k;});
-      if(!key)return;
-      const btn=document.createElement('button');
-      btn.className='hb-del';
-      btn.innerHTML='&times;';
-      btn.setAttribute('data-key',key);
-      btn.style.cssText='width:22px;height:22px;border-radius:50%;border:1px solid var(--danger);background:var(--danger-light);color:var(--danger);cursor:pointer;font-size:16px;font-weight:700;line-height:1;flex-shrink:0;margin-left:6px;padding:0;display:inline-flex;align-items:center;justify-content:center;';
-      btn.onclick=function(e){
+  const MS=window.BudgetPlanner?.MS||['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const _origRHB = window.BudgetPlanner.renderHistoryBank;
+
+  function myRenderHistoryBank(){
+    const el=document.getElementById('history-bank-list');
+    if(!el) return;
+    const mh = typeof monthHistory!=='undefined' ? monthHistory : {};
+    const ih = typeof insightHistory!=='undefined' ? insightHistory : {};
+    const keys = Object.keys(mh).sort().reverse();
+    if(!keys.length){
+      el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0;">No bulk imports yet. Use the import section below to upload monthly files.</div>';
+      return;
+    }
+    el.innerHTML = keys.map(key=>{
+      const[y,m]=key.split('-');
+      const label=(MS[+m]||m)+' '+y;
+      const meta=ih[key];
+      const fileName=meta?.fileName||'site data';
+      return `<div class="history-bank-item" style="display:flex;align-items:center;gap:9px;padding:7px 10px;background:var(--surface2);border-radius:var(--radius);margin-bottom:5px;font-size:12px;">
+        <i class="ti ti-calendar-stats" style="color:var(--accent);flex-shrink:0;font-size:14px;"></i>
+        <div style="flex:1;"><strong>${label}</strong><span style="font-size:10px;color:var(--text3);margin-left:6px;">${fileName}</span></div>
+        <span style="font-size:10px;color:var(--accent);">✓ synced</span>
+        <button class="bank-x" data-key="${key}" style="width:20px;height:20px;border-radius:50%;border:1px solid var(--danger);background:transparent;color:var(--danger);cursor:pointer;font-size:13px;font-weight:700;line-height:1;flex-shrink:0;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:0.5;transition:all .15s;">&times;</button>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('.bank-x').forEach(btn=>{
+      btn.onmouseover=()=>{btn.style.opacity='1';btn.style.background='var(--danger-light)';};
+      btn.onmouseout=()=>{btn.style.opacity='0.5';btn.style.background='transparent';};
+      btn.onclick=e=>{
         e.stopPropagation();
-        const k=this.getAttribute('data-key');
-        const[y,m]=k.split('-');
-        if(!confirm('Delete '+MS[+m]+' '+y+' from history bank?'))return;
-        const ih2=window.insightHistory||(typeof insightHistory!=='undefined'?insightHistory:{});
-        delete ih2[k];
-        if(window.insightHistory)window.insightHistory=ih2;
-        if(typeof insightHistory!=='undefined')insightHistory=ih2;
-        if(window.monthHistory)delete window.monthHistory[k];
-        if(window.trackerData)delete window.trackerData[k];
-        if(typeof lsSave==='function')lsSave();
-        this.closest('.history-bank-item').remove();
+        window.BudgetPlanner.deleteHistoryMonth(btn.getAttribute('data-key'));
       };
-      item.style.cssText+=(item.style.cssText?';':'')+'display:flex;align-items:center;';
-      item.appendChild(btn);
     });
   }
-  window.addEventListener('load',()=>{
-    setTimeout(()=>{
-      const origRHB=window.renderHistoryBank;
-      window.renderHistoryBank=function(){
-        if(origRHB)origRHB();
-        setTimeout(addDelBtns,50);
+
+  window.renderHistoryBank = myRenderHistoryBank;
+  window.BudgetPlanner.renderHistoryBank = myRenderHistoryBank;
+
+  function addGridX(){
+    document.querySelectorAll('#history-grid .history-card').forEach(card=>{
+      if(card.querySelector('.hg-del')) return;
+      const oc=card.getAttribute('onclick')||'';
+      const km=oc.match(/loadHistoryDetail\(['"]([^'"]+)['"]/);
+      if(!km) return;
+      const key=km[1]; const[y,m]=key.split('-');
+      const btn=document.createElement('button');
+      btn.className='hg-del';
+      btn.innerHTML='&times;';
+      btn.style.cssText='position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;border:1px solid var(--danger);background:var(--danger-light);color:var(--danger);cursor:pointer;font-size:11px;font-weight:700;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;z-index:10;opacity:0.7;transition:opacity .15s;';
+      btn.onmouseover=()=>btn.style.opacity='1';
+      btn.onmouseout=()=>btn.style.opacity='0.7';
+      btn.onclick=e=>{
+        e.stopPropagation();
+        window.BudgetPlanner.deleteHistoryMonth(key);
       };
-      const origST=window.showTab;
-      window.showTab=function(t){
-        if(origST)origST(t);
-        if(t==='insights')setTimeout(addDelBtns,200);
-      };
-      addDelBtns();
-    },800);
-  });
+      card.style.position='relative';
+      card.appendChild(btn);
+    });
+  }
+
+  const _origRI = window.renderInsights;
+  window.renderInsights = function(){
+    if(_origRI) _origRI();
+    setTimeout(()=>{ myRenderHistoryBank(); addGridX(); }, 100);
+  };
+  window.BudgetPlanner.renderInsights = window.renderInsights;
+
+  const _origST = window.showTab;
+  window.showTab = function(t){
+    if(_origST) _origST(t);
+    if(t==='insights') setTimeout(()=>{ myRenderHistoryBank(); addGridX(); }, 200);
+  };
+  window.BudgetPlanner.showTab = window.showTab;
+
+  myRenderHistoryBank();
+  addGridX();
 })();
