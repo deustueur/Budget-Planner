@@ -2589,8 +2589,8 @@ window.BudgetPlanner = {
     get accountBalance()   { return accountBalance; },
     get activeProfile()    { return activeProfile; },
     get currencySymbol()   { return currencySymbol; },
-    get layoutConfig()     { return layoutConfig; },
-    set layoutConfig(v)    { layoutConfig=v; },
+    get layoutConfig()    { return window.__patchLayoutConfig||{}; },
+    set layoutConfig(v)   { window.__patchLayoutConfig=v; },
   },
 
   tabs:{

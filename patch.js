@@ -1200,4 +1200,24 @@ window.resetLayout   = resetLayout;
       }, 150);
     }
   };
+
+// ── SYNC layoutConfig to window for BudgetPlanner port access ──
+(function(){
+  const origLoad = loadLayout;
+  loadLayout = function(){
+    origLoad();
+    window.__patchLayoutConfig = layoutConfig;
+  };
+  const origSave = saveLayout;
+  saveLayout = function(){
+    window.__patchLayoutConfig = layoutConfig;
+    origSave();
+  };
+  const origRecord = recordPos;
+  recordPos = function(wrap){
+    origRecord(wrap);
+    window.__patchLayoutConfig = layoutConfig;
+  };
+})();
+
 })();
