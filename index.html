@@ -2096,8 +2096,9 @@ async function downloadSiteMaster(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(layoutRows),'Layout');
   // ── InsightHistory (history bank compounding data) ──
   const ihRows=[['month_key','fileName','uploadedAt','resolved','resolvedAt']];
+  const fmtTs=(t)=>t?new Date(t).toISOString().slice(0,19).replace('T',' '):'';
   Object.entries(insightHistory||{}).forEach(([k,h])=>{
-    ihRows.push([k,h.fileName||'',h.uploadedAt||'',h.resolved?'true':'false',h.resolvedAt||'']);
+    ihRows.push([k,h.fileName||'',fmtTs(h.uploadedAt),h.resolved?'true':'false',fmtTs(h.resolvedAt)]);
   });
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ihRows),'InsightHistory');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(funcMap),'FunctionsMap');
@@ -2257,8 +2258,9 @@ function applyMasterOverwrite(){
     insightHistory={};
     rows.slice(1).forEach(r=>{
       const k=String(r[hi('month_key')]||'');if(!k)return;
-      insightHistory[k]={fileName:String(r[hi('fileName')]||''),uploadedAt:+r[hi('uploadedAt')]||0,
-        resolved:String(r[hi('resolved')])==='true',resolvedAt:+r[hi('resolvedAt')]||0};
+      const parseTs=(v)=>{if(!v)return 0;if(typeof v==='number')return v;const d=new Date(String(v).replace(' ','T'));return isNaN(d.getTime())?0:d.getTime();};
+      insightHistory[k]={fileName:String(r[hi('fileName')]||''),uploadedAt:parseTs(r[hi('uploadedAt')]),
+        resolved:String(r[hi('resolved')])==='true',resolvedAt:parseTs(r[hi('resolvedAt')])};
     });
   }
   window._pendingMasterWb=null;

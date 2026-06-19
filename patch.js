@@ -171,6 +171,7 @@ function recordPos(wrap) {
     w:   pSpan(wrap.style.gridColumn),
     h:   pSpan(wrap.style.gridRow),
   };
+  window.__patchLayoutConfig = layoutConfig;
 }
 
 function loadLayout() {
@@ -941,6 +942,7 @@ function patchInit() {
   }
   injectStyles();
   loadLayout();
+  window.__patchLayoutConfig = layoutConfig;
   
   // Tag timeline first
   const track = document.getElementById('cf-track');
@@ -1201,23 +1203,6 @@ window.resetLayout   = resetLayout;
     }
   };
 
-// ── SYNC layoutConfig to window for BudgetPlanner port access ──
-(function(){
-  const origLoad = loadLayout;
-  loadLayout = function(){
-    origLoad();
-    window.__patchLayoutConfig = layoutConfig;
-  };
-  const origSave = saveLayout;
-  saveLayout = function(){
-    window.__patchLayoutConfig = layoutConfig;
-    origSave();
-  };
-  const origRecord = recordPos;
-  recordPos = function(wrap){
-    origRecord(wrap);
-    window.__patchLayoutConfig = layoutConfig;
-  };
-})();
+// (old broken sync block removed — see direct sync calls instead)
 
 })();
