@@ -644,7 +644,7 @@ let isDarkTheme=window.matchMedia('(prefers-color-scheme:dark)').matches;
 let settlementHistory=[];
 let insightHistory={};   // history bank: monthKey → {fileName, uploadedAt, snapshot, trackerSnapshot}
 let pendingConflicts={}; // monthKey → {site, uploaded}
-let overwriteMap={items:true,savings:true,instruments:true,tracker:true,monthHistory:true,events:true,config:true};
+let overwriteMap={items:true,savings:true,instruments:true,tracker:true,monthHistory:true,events:true,config:true,layout:true,insightHistory:true};
 let _stateDirty=false;
 
 // ════════════════════════════════════════════════════════════════
@@ -1985,7 +1985,7 @@ function buildHTMLSnapshot(){
 function openMasterModal(){document.getElementById('master-overlay').classList.add('open');renderOverwriteMap();}
 function closeMasterModal(){document.getElementById('master-overlay').classList.remove('open');}
 function renderOverwriteMap(){
-  const sections=[{key:'items',label:'Budget items (income + expenses)'},{key:'savings',label:'Savings streams'},{key:'instruments',label:'Financial instruments'},{key:'tracker',label:'Tracker actuals'},{key:'monthHistory',label:'Month history snapshots'},{key:'events',label:'Transaction events'},{key:'config',label:'Config (currency, theme, balance, profile)'}];
+  const sections=[{key:'items',label:'Budget items (income + expenses)'},{key:'savings',label:'Savings streams'},{key:'instruments',label:'Financial instruments'},{key:'tracker',label:'Tracker actuals'},{key:'monthHistory',label:'Month history snapshots'},{key:'events',label:'Transaction events'},{key:'config',label:'Config (currency, theme, balance, profile)'},{key:'layout',label:'God mode card layout'},{key:'insightHistory',label:'History bank import records'}];
   document.getElementById('ow-tick-list').innerHTML=sections.map(s=>`<div class="ow-tick-row"><input type="checkbox" id="owt-${s.key}" ${overwriteMap[s.key]?'checked':''} onchange="overwriteMap['${s.key}']=this.checked"><label for="owt-${s.key}" style="cursor:pointer;flex:1;">${s.label}</label></div>`).join('');
 }
 
@@ -2085,6 +2085,21 @@ async function downloadSiteMaster(){
     ['Currency settings','Nav','Change currency symbol and locale','currencySymbol, currencyLocale','both','click currency badge','affects all fmt() calls'],
     ['Notifications bell','Nav','Upcoming due items + pending conflicts + goal alerts','items, pendingConflicts, savingsStreams','notifications[]','bell icon','count badge'],
   ];
+  // ── Layout (god mode card positions) ──
+  const layoutCfg=(window.BudgetPlanner&&window.BudgetPlanner.state.layoutConfig)||{};
+  const layoutRows=[['tab','island_id','col','row','w','h']];
+  Object.entries(layoutCfg).forEach(([tab,islands])=>{
+    Object.entries(islands).forEach(([id,pos])=>{
+      layoutRows.push([tab,id,pos.col,pos.row,pos.w,pos.h]);
+    });
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(layoutRows),'Layout');
+  // ── InsightHistory (history bank compounding data) ──
+  const ihRows=[['month_key','fileName','uploadedAt','resolved','resolvedAt']];
+  Object.entries(insightHistory||{}).forEach(([k,h])=>{
+    ihRows.push([k,h.fileName||'',h.uploadedAt||'',h.resolved?'true':'false',h.resolvedAt||'']);
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ihRows),'InsightHistory');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(funcMap),'FunctionsMap');
   // Write
   const wbout=XLSX.write(wb,{type:'binary',bookType:'xlsx'});
@@ -2221,6 +2236,30 @@ function applyMasterOverwrite(){
       status:String(r[hi('status')]||'untagged'),routeType:String(r[hi('routeType')]||''),
       routeTargetName:String(r[hi('routeTargetName')]||''),tkey:getTkey(+r[hi('month')]||0,+r[hi('year')]||0)
     }));
+  }
+  if(overwriteMap.layout&&wb.SheetNames.includes('Layout')){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets['Layout'],{header:1});
+    const headers=rows[0];const hi=(h)=>headers.indexOf(h);
+    const newLayout={};
+    rows.slice(1).forEach(r=>{
+      const tab=String(r[hi('tab')]||'');const id=String(r[hi('island_id')]||'');
+      if(!tab||!id)return;
+      if(!newLayout[tab])newLayout[tab]={};
+      newLayout[tab][id]={col:+r[hi('col')]||1,row:+r[hi('row')]||1,w:+r[hi('w')]||1,h:+r[hi('h')]||1};
+    });
+    if(window.BudgetPlanner){
+      window.BudgetPlanner.state.layoutConfig=newLayout;
+    }
+  }
+  if(overwriteMap.insightHistory&&wb.SheetNames.includes('InsightHistory')){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets['InsightHistory'],{header:1});
+    const headers=rows[0];const hi=(h)=>headers.indexOf(h);
+    insightHistory={};
+    rows.slice(1).forEach(r=>{
+      const k=String(r[hi('month_key')]||'');if(!k)return;
+      insightHistory[k]={fileName:String(r[hi('fileName')]||''),uploadedAt:+r[hi('uploadedAt')]||0,
+        resolved:String(r[hi('resolved')])==='true',resolvedAt:+r[hi('resolvedAt')]||0};
+    });
   }
   window._pendingMasterWb=null;
   document.getElementById('master-upload-confirm').style.display='none';
