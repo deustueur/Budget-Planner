@@ -1206,3 +1206,190 @@ window.resetLayout   = resetLayout;
 // (old broken sync block removed — see direct sync calls instead)
 
 })();
+
+// ══════════════════════════════════════════════════════════════
+// TREND CHART — 6-month income / expenses / savings / balance
+// Injected into Insights tab before History Bank section
+// ══════════════════════════════════════════════════════════════
+(function(){
+  function buildTrendChart(){
+    if(document.getElementById('trend-chart-patch')) return; // already rendered
+    const mh = typeof monthHistory!=='undefined' ? monthHistory : {};
+    const keys = Object.keys(mh).sort();
+    if(!keys.length) return; // no data yet
+    const MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels  = keys.map(k=>{ const[y,m]=k.split('-'); return MS[+m]+' '+y; });
+    const incData = keys.map(k=>mh[k].totalIncome||0);
+    const expData = keys.map(k=>mh[k].totalExpenses||0);
+    const savData = keys.map(k=>mh[k].totalSaved||0);
+    const balData = keys.map(k=>mh[k].balance||((mh[k].totalIncome||0)-(mh[k].totalExpenses||0)));
+    // Find injection point — before "History Bank" section title
+    const titles = document.querySelectorAll('.insight-section-title');
+    let injectBefore = null;
+    titles.forEach(t=>{ if(t.textContent.includes('History Bank')) injectBefore=t; });
+    if(!injectBefore) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'trend-chart-patch';
+    wrap.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07);';
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.09em;">${keys.length}-month trend — income · expenses · savings</span>
+        <div style="display:flex;gap:10px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:10px;height:3px;background:#1D9E75;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Income</span>
+          <span><span style="display:inline-block;width:10px;height:3px;background:#E24B4A;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Expenses</span>
+          <span><span style="display:inline-block;width:10px;height:3px;background:#7F77DD;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Savings</span>
+          <span><span style="display:inline-block;width:10px;height:3px;background:#BA7517;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Balance</span>
+        </div>
+      </div>
+      <div style="position:relative;height:200px;"><canvas id="trend-chart-canvas"></canvas></div>`;
+    injectBefore.parentNode.insertBefore(wrap, injectBefore);
+    if(typeof Chart==='undefined') return;
+    const ctx = document.getElementById('trend-chart-canvas').getContext('2d');
+    new Chart(ctx, {
+      type:'line',
+      data:{
+        labels,
+        datasets:[
+          { label:'Income',   data:incData, borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,0.08)', tension:0.3, fill:true,  pointRadius:4, borderWidth:2 },
+          { label:'Expenses', data:expData, borderColor:'#E24B4A', backgroundColor:'rgba(226,75,74,0.06)',  tension:0.3, fill:true,  pointRadius:4, borderWidth:2 },
+          { label:'Savings',  data:savData, borderColor:'#7F77DD', backgroundColor:'rgba(127,119,221,0.06)',tension:0.3, fill:false, pointRadius:4, borderWidth:2 },
+          { label:'Balance',  data:balData, borderColor:'#BA7517', backgroundColor:'transparent',           tension:0.3, fill:false, pointRadius:3, borderWidth:1.5, borderDash:[5,3] },
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{
+          legend:{ display:false },
+          tooltip:{ callbacks:{ label: c => c.dataset.label+': '+Math.round(c.raw).toLocaleString('en-LK')+' LKR' } }
+        },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ font:{ size:10 } } },
+          y:{ grid:{ color:'rgba(128,128,128,0.07)' }, ticks:{ callback:v=>Math.round(v/1000)+'k', font:{ size:10 } } }
+        }
+      }
+    });
+  }
+
+  // Hook into showTab and renderInsights so chart rebuilds when navigating to Insights
+  const _origST = window.showTab;
+  window.showTab = function(t){
+    if(_origST) _origST(t);
+    if(t==='insights') setTimeout(()=>{ const old=document.getElementById('trend-chart-patch'); if(old) old.remove(); buildTrendChart(); }, 200);
+  };
+  const _origRI = window.renderInsights;
+  window.renderInsights = function(){
+    if(_origRI) _origRI();
+    setTimeout(()=>{ const old=document.getElementById('trend-chart-patch'); if(old) old.remove(); buildTrendChart(); }, 200);
+  };
+
+  // Run now if insights tab already active
+  if(document.querySelector('#tab-insights.active')) buildTrendChart();
+  console.log('patch: trend chart active');
+})();
+
+// ══════════════════════════════════════════════════════════════
+// AFFORD PREVIEW — inline "can I afford this" in Add Item modal
+// ══════════════════════════════════════════════════════════════
+(function(){
+  const _fmt = n => Math.round(n).toLocaleString('en-LK');
+  const _toM = typeof toMonthly==='function' ? toMonthly : v=>v;
+  const _cur = ()=> typeof currencySymbol!=='undefined' ? currencySymbol : 'LKR';
+
+  function injectPreview(){
+    if(document.getElementById('afford-preview')) return;
+    const footer = document.querySelector('#item-overlay .modal-footer');
+    if(!footer) return;
+    const preview = document.createElement('div');
+    preview.id = 'afford-preview';
+    preview.style.cssText = 'margin:0 0 14px 0;border-radius:var(--radius);overflow:hidden;transition:all .3s;display:none;';
+    footer.parentNode.insertBefore(preview, footer);
+  }
+
+  function updatePreview(){
+    injectPreview();
+    const preview = document.getElementById('afford-preview');
+    if(!preview) return;
+    const val  = parseFloat(document.getElementById('item-val')?.value) || 0;
+    const freq = document.getElementById('item-freq')?.value || 'monthly';
+    const name = document.getElementById('item-name')?.value?.trim() || 'this item';
+    const isIncome = typeof itemModalType!=='undefined' ? itemModalType==='income' : false;
+    if(!val){ preview.style.display='none'; return; }
+    preview.style.display='block';
+    const mv = Math.round(_toM(val, freq));
+    const allItems = typeof items!=='undefined' ? items : [];
+    const curInc = allItems.filter(i=>i.type==='income'&&i.on).reduce((s,i)=>s+_toM(i.val,i.freq),0);
+    const curExp = allItems.filter(i=>i.type==='expense'&&i.on).reduce((s,i)=>s+_toM(i.val,i.freq),0);
+    const purposeEl = document.getElementById('item-purpose');
+    const isSaving = purposeEl?.value==='saving';
+    const curSav = (typeof totalSavingsTagged==='function' ? totalSavingsTagged() : 0) + (isSaving&&!isIncome ? mv : 0);
+    const newInc = isIncome ? curInc+mv : curInc;
+    const newExp = isIncome ? curExp    : curExp+mv;
+    const newBal = newInc - newExp;
+    const curBal = curInc - curExp;
+    const balDiff = newBal - curBal;
+    const newRate = newInc>0 ? (curSav/newInc)*100 : 0;
+    const curRate = curInc>0 ? ((typeof totalSavingsTagged==='function'?totalSavingsTagged():0)/curInc)*100 : 0;
+    const rateDiff = newRate - curRate;
+    const tightFloor = Math.max(curBal*0.2, 5000);
+    const canAfford = newBal>=0;
+    const tight = canAfford && newBal<tightFloor;
+    const color   = !canAfford?'var(--danger)':tight?'var(--warning)':'var(--accent)';
+    const bgColor = !canAfford?'var(--danger-light)':tight?'var(--warning-light)':'var(--accent-light)';
+    const icon    = !canAfford?'ti-alert-triangle':tight?'ti-alert-circle':'ti-circle-check';
+    const verdict = !canAfford
+      ? `Adding <strong>${name}</strong> puts you in <strong>deficit</strong>`
+      : tight
+      ? `Affordable but tight — only <strong>${_fmt(newBal)} ${_cur()}</strong> left`
+      : `✓ You can afford <strong>${name}</strong>`;
+    preview.innerHTML = `
+      <div style="background:${bgColor};border:1px solid ${color};border-radius:var(--radius);padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <i class="ti ${icon}" style="color:${color};font-size:15px;flex-shrink:0;"></i>
+          <div style="font-size:12px;">${verdict}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div style="background:rgba(255,255,255,0.08);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Monthly cost</div>
+            <div style="font-size:13px;font-weight:700;color:${color};">${_fmt(mv)}</div>
+            <div style="font-size:9px;color:var(--text3);">${freq==='annual'?_fmt(Math.round(mv*12))+'/yr':freq==='weekly'?_fmt(Math.round(mv*52))+'/yr':'/mo'}</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.08);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">New balance</div>
+            <div style="font-size:13px;font-weight:700;color:${newBal>=0?'var(--accent)':'var(--danger)'};">${_fmt(newBal)}</div>
+            <div style="font-size:9px;color:${balDiff>=0?'var(--accent)':'var(--danger)'};">${balDiff>=0?'+':''}${_fmt(balDiff)} vs now</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.08);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Savings rate</div>
+            <div style="font-size:13px;font-weight:700;">${newRate.toFixed(1)}%</div>
+            <div style="font-size:9px;color:${rateDiff>=0?'var(--accent)':'var(--danger)'};">${rateDiff>=0?'+':''}${rateDiff.toFixed(1)}% vs now</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function hookInputs(){
+    ['item-val','item-freq','item-name','item-purpose'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el&&!el._affordHooked){
+        el.addEventListener(id==='item-freq'||id==='item-purpose'?'change':'input', updatePreview);
+        el._affordHooked=true;
+      }
+    });
+  }
+
+  const _origOpen = window.openItemModal;
+  window.openItemModal = function(editId){
+    if(_origOpen) _origOpen(editId);
+    setTimeout(()=>{ injectPreview(); hookInputs(); updatePreview(); }, 150);
+  };
+  const _origSIT = window.setItemType;
+  window.setItemType = function(t){
+    if(_origSIT) _origSIT(t);
+    setTimeout(updatePreview, 50);
+  };
+  if(document.getElementById('item-overlay')?.classList.contains('open')){
+    injectPreview(); hookInputs(); updatePreview();
+  }
+  console.log('patch: afford preview active');
+})();
