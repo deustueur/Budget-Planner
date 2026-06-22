@@ -1393,3 +1393,315 @@ window.resetLayout   = resetLayout;
   }
   console.log('patch: afford preview active');
 })();
+
+// ══════════════════════════════════════════════════════════════
+// TREND CHART — 6-month income / expenses / savings / balance
+// ══════════════════════════════════════════════════════════════
+(function(){
+  function buildTrendChart(){
+    if(document.getElementById('trend-chart-patch')) return;
+    const mh = typeof monthHistory!=='undefined' ? monthHistory : {};
+    const keys = Object.keys(mh).sort();
+    if(!keys.length) return;
+    const MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels  = keys.map(k=>{ const[y,m]=k.split('-'); return MS[+m]+' '+y; });
+    const incData = keys.map(k=>mh[k].totalIncome||0);
+    const expData = keys.map(k=>mh[k].totalExpenses||0);
+    const savData = keys.map(k=>mh[k].totalSaved||0);
+    const balData = keys.map(k=>mh[k].balance||((mh[k].totalIncome||0)-(mh[k].totalExpenses||0)));
+    const titles = document.querySelectorAll('.insight-section-title');
+    let injectBefore = null;
+    titles.forEach(t=>{ if(t.textContent.includes('History Bank')) injectBefore=t; });
+    if(!injectBefore) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'trend-chart-patch';
+    wrap.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07);';
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.09em;">${keys.length}-month trend — income · expenses · savings</span>
+        <div style="display:flex;gap:10px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:10px;height:3px;background:#1D9E75;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Income</span>
+          <span><span style="display:inline-block;width:10px;height:3px;background:#E24B4A;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Expenses</span>
+          <span><span style="display:inline-block;width:10px;height:3px;background:#7F77DD;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Savings</span>
+          <span><span style="display:inline-block;width:10px;height:3px;background:#BA7517;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Balance</span>
+        </div>
+      </div>
+      <div style="position:relative;height:200px;"><canvas id="trend-chart-canvas"></canvas></div>`;
+    injectBefore.parentNode.insertBefore(wrap, injectBefore);
+    if(typeof Chart==='undefined') return;
+    const ctx = document.getElementById('trend-chart-canvas').getContext('2d');
+    new Chart(ctx, {
+      type:'line',
+      data:{
+        labels,
+        datasets:[
+          { label:'Income',   data:incData, borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,0.08)', tension:0.3, fill:true,  pointRadius:4, borderWidth:2 },
+          { label:'Expenses', data:expData, borderColor:'#E24B4A', backgroundColor:'rgba(226,75,74,0.06)',  tension:0.3, fill:true,  pointRadius:4, borderWidth:2 },
+          { label:'Savings',  data:savData, borderColor:'#7F77DD', backgroundColor:'rgba(127,119,221,0.06)',tension:0.3, fill:false, pointRadius:4, borderWidth:2 },
+          { label:'Balance',  data:balData, borderColor:'#BA7517', backgroundColor:'transparent',           tension:0.3, fill:false, pointRadius:3, borderWidth:1.5, borderDash:[5,3] },
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{
+          legend:{ display:false },
+          tooltip:{ callbacks:{ label: c => c.dataset.label+': '+Math.round(c.raw).toLocaleString('en-LK')+' LKR' } }
+        },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ font:{ size:10 } } },
+          y:{ grid:{ color:'rgba(128,128,128,0.07)' }, ticks:{ callback:v=>Math.round(v/1000)+'k', font:{ size:10 } } }
+        }
+      }
+    });
+  }
+  const _origST = window.showTab;
+  window.showTab = function(t){
+    if(_origST) _origST(t);
+    if(t==='insights') setTimeout(()=>{ const old=document.getElementById('trend-chart-patch'); if(old) old.remove(); buildTrendChart(); }, 200);
+  };
+  const _origRI = window.renderInsights;
+  window.renderInsights = function(){
+    if(_origRI) _origRI();
+    setTimeout(()=>{ const old=document.getElementById('trend-chart-patch'); if(old) old.remove(); buildTrendChart(); }, 200);
+  };
+  if(document.querySelector('#tab-insights.active')) buildTrendChart();
+  console.log('patch: trend chart active');
+})();
+
+// ══════════════════════════════════════════════════════════════
+// AFFORD PREVIEW — inline "can I afford this" in Add Item modal
+// ══════════════════════════════════════════════════════════════
+(function(){
+  const _fmt = n => Math.round(n).toLocaleString('en-LK');
+  const _toM = typeof toMonthly==='function' ? toMonthly : v=>v;
+  const _cur = ()=> typeof currencySymbol!=='undefined' ? currencySymbol : 'LKR';
+  function injectPreview(){
+    if(document.getElementById('afford-preview')) return;
+    const footer = document.querySelector('#item-overlay .modal-footer');
+    if(!footer) return;
+    const preview = document.createElement('div');
+    preview.id = 'afford-preview';
+    preview.style.cssText = 'margin:0 0 14px 0;border-radius:var(--radius);overflow:hidden;transition:all .3s;display:none;';
+    footer.parentNode.insertBefore(preview, footer);
+  }
+  function updatePreview(){
+    injectPreview();
+    const preview = document.getElementById('afford-preview');
+    if(!preview) return;
+    const val  = parseFloat(document.getElementById('item-val')?.value) || 0;
+    const freq = document.getElementById('item-freq')?.value || 'monthly';
+    const name = document.getElementById('item-name')?.value?.trim() || 'this item';
+    const isIncome = typeof itemModalType!=='undefined' ? itemModalType==='income' : false;
+    if(!val){ preview.style.display='none'; return; }
+    preview.style.display='block';
+    const mv = Math.round(_toM(val, freq));
+    const allItems = typeof items!=='undefined' ? items : [];
+    const curInc = allItems.filter(i=>i.type==='income'&&i.on).reduce((s,i)=>s+_toM(i.val,i.freq),0);
+    const curExp = allItems.filter(i=>i.type==='expense'&&i.on).reduce((s,i)=>s+_toM(i.val,i.freq),0);
+    const purposeEl = document.getElementById('item-purpose');
+    const isSaving = purposeEl?.value==='saving';
+    const curSav = (typeof totalSavingsTagged==='function' ? totalSavingsTagged() : 0) + (isSaving&&!isIncome ? mv : 0);
+    const newInc = isIncome ? curInc+mv : curInc;
+    const newExp = isIncome ? curExp    : curExp+mv;
+    const newBal = newInc - newExp;
+    const curBal = curInc - curExp;
+    const balDiff = newBal - curBal;
+    const newRate = newInc>0 ? (curSav/newInc)*100 : 0;
+    const curRate = curInc>0 ? ((typeof totalSavingsTagged==='function'?totalSavingsTagged():0)/curInc)*100 : 0;
+    const rateDiff = newRate - curRate;
+    const tightFloor = Math.max(curBal*0.2, 5000);
+    const canAfford = newBal>=0;
+    const tight = canAfford && newBal<tightFloor;
+    const color   = !canAfford?'var(--danger)':tight?'var(--warning)':'var(--accent)';
+    const bgColor = !canAfford?'var(--danger-light)':tight?'var(--warning-light)':'var(--accent-light)';
+    const icon    = !canAfford?'ti-alert-triangle':tight?'ti-alert-circle':'ti-circle-check';
+    const verdict = !canAfford
+      ? `Adding <strong>${name}</strong> puts you in <strong>deficit</strong>`
+      : tight
+      ? `Affordable but tight — only <strong>${_fmt(newBal)} ${_cur()}</strong> left`
+      : `✓ You can afford <strong>${name}</strong>`;
+    preview.innerHTML = `
+      <div style="background:${bgColor};border:1px solid ${color};border-radius:var(--radius);padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <i class="ti ${icon}" style="color:${color};font-size:15px;flex-shrink:0;"></i>
+          <div style="font-size:12px;">${verdict}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div style="background:rgba(255,255,255,0.08);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Monthly cost</div>
+            <div style="font-size:13px;font-weight:700;color:${color};">${_fmt(mv)}</div>
+            <div style="font-size:9px;color:var(--text3);">${freq==='annual'?_fmt(Math.round(mv*12))+'/yr':freq==='weekly'?_fmt(Math.round(mv*52))+'/yr':'/mo'}</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.08);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">New balance</div>
+            <div style="font-size:13px;font-weight:700;color:${newBal>=0?'var(--accent)':'var(--danger)'};">${_fmt(newBal)}</div>
+            <div style="font-size:9px;color:${balDiff>=0?'var(--accent)':'var(--danger)'};">${balDiff>=0?'+':''}${_fmt(balDiff)} vs now</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.08);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Savings rate</div>
+            <div style="font-size:13px;font-weight:700;">${newRate.toFixed(1)}%</div>
+            <div style="font-size:9px;color:${rateDiff>=0?'var(--accent)':'var(--danger)'};">${rateDiff>=0?'+':''}${rateDiff.toFixed(1)}% vs now</div>
+          </div>
+        </div>
+      </div>`;
+  }
+  function hookInputs(){
+    ['item-val','item-freq','item-name','item-purpose'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el&&!el._affordHooked){
+        el.addEventListener(id==='item-freq'||id==='item-purpose'?'change':'input', updatePreview);
+        el._affordHooked=true;
+      }
+    });
+  }
+  const _origOpen = window.openItemModal;
+  window.openItemModal = function(editId){
+    if(_origOpen) _origOpen(editId);
+    setTimeout(()=>{ injectPreview(); hookInputs(); updatePreview(); }, 150);
+  };
+  const _origSIT = window.setItemType;
+  window.setItemType = function(t){
+    if(_origSIT) _origSIT(t);
+    setTimeout(updatePreview, 50);
+  };
+  if(document.getElementById('item-overlay')?.classList.contains('open')){
+    injectPreview(); hookInputs(); updatePreview();
+  }
+  console.log('patch: afford preview active');
+})();
+
+// ══════════════════════════════════════════════════════════════
+// SETTLEMENT CLOSE LOOP — mark settled, history log, auto-reset
+// ══════════════════════════════════════════════════════════════
+(function(){
+  const _fmt = n => Math.round(n).toLocaleString('en-LK');
+  const _cur = ()=> typeof currencySymbol!=='undefined' ? currencySymbol : 'LKR';
+  const MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function nowKey(){ const n=new Date(); return n.getFullYear()+'-'+n.getMonth(); }
+  function loadHistory(){ try{ return JSON.parse(localStorage.getItem('bp_settlements')||'[]'); }catch(e){ return []; } }
+  function saveHistory(h){ try{ localStorage.setItem('bp_settlements',JSON.stringify(h)); }catch(e){} }
+  function isSettled(){ return loadHistory().some(s=>s.monthKey===nowKey()); }
+
+  function calcSettlement(){
+    const allItems = typeof items!=='undefined' ? items : [];
+    let dOwes=0;
+    allItems.filter(i=>i.type==='expense'&&i.on&&i.owner==='shared').forEach(item=>{
+      const mv=(typeof toMonthly==='function'?toMonthly:v=>v)(item.val,item.freq);
+      dOwes+=((item.splitRatio?.dulini??50)/100)*mv;
+    });
+    const net=dOwes;
+    return { net, direction: net>0?'dulini_owes_trevin':'trevin_owes_dulini', amount:Math.abs(net) };
+  }
+
+  function renderSettlementPanel(){
+    let panel = document.getElementById('settlement-panel');
+    if(!panel){
+      const savTab = document.getElementById('tab-savings');
+      if(!savTab) return;
+      panel = document.createElement('div');
+      panel.id = 'settlement-panel';
+      panel.style.cssText = 'margin-bottom:14px;';
+      // Insert after first child (metrics)
+      const ref = savTab.children[1] || null;
+      savTab.insertBefore(panel, ref);
+    }
+    const s = calcSettlement();
+    const now = new Date();
+    const monthLabel = MS[now.getMonth()]+' '+now.getFullYear();
+    const settled = isSettled();
+    const history = loadHistory();
+    const owedBy = s.direction==='dulini_owes_trevin'?'Dulini':'Trevin';
+    const owedTo = s.direction==='dulini_owes_trevin'?'Trevin':'Dulini';
+    const owedByColor = s.direction==='dulini_owes_trevin'?'var(--dulini)':'var(--trevin)';
+    const nextReset = new Date(now.getFullYear(),now.getMonth()+1,1).toLocaleDateString('en-LK');
+
+    panel.innerHTML = `
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Monthly settlement — ${monthLabel}</span>
+          ${settled
+            ? '<span style="font-size:11px;background:var(--accent-light);color:var(--accent-dark);padding:2px 9px;border-radius:99px;font-weight:600;">✓ Settled</span>'
+            : '<span style="font-size:11px;background:var(--warning-light);color:var(--warning);padding:2px 9px;border-radius:99px;font-weight:600;">Pending</span>'}
+        </div>
+        ${settled ? `
+          <div style="text-align:center;padding:14px 0;">
+            <div style="font-size:28px;margin-bottom:6px;">✅</div>
+            <div style="font-size:13px;font-weight:600;color:var(--accent);">All settled for ${monthLabel}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px;">Resets ${nextReset}</div>
+            <button onclick="window._undoSettlement()" class="btn btn-sm" style="margin-top:10px;border-color:var(--danger);color:var(--danger);">
+              <i class="ti ti-arrow-back-up"></i> Undo
+            </button>
+          </div>
+        ` : `
+          <div style="display:flex;align-items:center;gap:14px;padding:6px 0 14px;">
+            <div style="flex:1;">
+              <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Based on shared expense splits:</div>
+              <div style="font-size:22px;font-weight:700;color:${owedByColor};">${_fmt(s.amount)} ${_cur()}</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:3px;">
+                <strong style="color:${owedByColor};">${owedBy}</strong> owes <strong>${owedTo}</strong> this month
+              </div>
+            </div>
+            <button onclick="window._markSettledNow()" class="btn btn-accent" style="flex-shrink:0;">
+              <i class="ti ti-check"></i> Mark settled
+            </button>
+          </div>
+        `}
+        ${history.length ? `
+          <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+            <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">Settlement history</div>
+            ${history.slice().reverse().slice(0,6).map(h=>`
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border2);font-size:11px;gap:8px;">
+                <span style="color:var(--text2);min-width:60px;">${h.monthLabel}</span>
+                <span style="color:var(--text2);flex:1;">${h.who} → ${h.toWho}</span>
+                <span style="font-weight:600;">${_fmt(h.amount)} ${_cur()}</span>
+                <span style="color:var(--accent);font-size:10px;white-space:nowrap;">✓ ${h.settledOn}</span>
+              </div>`).join('')}
+          </div>
+        ` : ''}
+      </div>`;
+  }
+
+  window._markSettledNow = function(){
+    const s=calcSettlement();
+    const h=loadHistory();
+    const n=new Date();
+    h.push({
+      monthKey:nowKey(),
+      monthLabel:MS[n.getMonth()]+' '+n.getFullYear(),
+      amount:s.amount,
+      who:s.direction==='dulini_owes_trevin'?'Dulini':'Trevin',
+      toWho:s.direction==='dulini_owes_trevin'?'Trevin':'Dulini',
+      settledOn:n.toLocaleDateString('en-LK'),
+      ts:Date.now()
+    });
+    saveHistory(h);
+    if(typeof markDirty==='function') markDirty();
+    renderSettlementPanel();
+  };
+
+  window._undoSettlement = function(){
+    if(!confirm('Undo this month\'s settlement?')) return;
+    saveHistory(loadHistory().filter(s=>s.monthKey!==nowKey()));
+    renderSettlementPanel();
+  };
+
+  // Null guard for built-in renderSettlement
+  const _origRS = window.renderSettlement;
+  window.renderSettlement = function(){
+    try{ if(_origRS) _origRS(); }catch(e){}
+    renderSettlementPanel();
+  };
+
+  // Hook into renderSavings so panel always appears
+  const _origRSav = window.renderSavings;
+  window.renderSavings = function(){
+    if(_origRSav) _origRSav();
+    setTimeout(renderSettlementPanel, 100);
+  };
+
+  // Run now if savings tab active
+  if(document.querySelector('#tab-savings.active')) renderSettlementPanel();
+  console.log('patch: settlement close loop active');
+})();
