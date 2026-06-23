@@ -1978,7 +1978,7 @@ window.resetLayout   = resetLayout;
   const _fmt = n => Math.round(n).toLocaleString('en-LK');
   const _cur = ()=> typeof currencySymbol!=='undefined' ? currencySymbol : 'LKR';
   function buildDiff(){
-    const ls = localStorage.getItem('bp_state_v7')||localStorage.getItem('bp_state_v6');
+    const ls = localStorage.getItem('bp_state_v8');
     if(!ls) return [];
     const saved = JSON.parse(ls);
     const liveItems = typeof items!=='undefined' ? items : [];
@@ -2000,7 +2000,7 @@ window.resetLayout   = resetLayout;
     if(existing) existing.remove();
     const diffs=buildDiff();
     if(!diffs.length) return;
-    const saved=JSON.parse(localStorage.getItem('bp_state_v7')||localStorage.getItem('bp_state_v6')||'{}');
+    const saved=JSON.parse(localStorage.getItem('bp_state_v8')||'{}');
     const savedAt=saved._ts?new Date(saved._ts).toLocaleString('en-LK'):'—';
     const lines=diffs.slice(0,4).map(d=>{
       if(d.type==='changed') return `<strong>${d.name}</strong> ${_fmt(d.from)} → ${_fmt(d.to)} ${_cur()}`;
