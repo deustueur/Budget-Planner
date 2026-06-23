@@ -2090,7 +2090,7 @@ window.resetLayout   = resetLayout;
     if(_md2) _md2();
     setTimeout(function(){
       var dash = document.getElementById("tab-dashboard");
-      if(!dash || !dash.classList.contains("active")) return;
+      if(!dash) return;
       var saved;
       try{ saved=JSON.parse(localStorage.getItem("bp_state_v8")||"{}"); }catch(e){ return; }
       if(!saved.items) return;
@@ -2132,4 +2132,13 @@ window.resetLayout   = resetLayout;
     },200);
   };
   console.log("Diff banner wired to markDirty");
+})();
+
+(function(){
+  var _origST99 = window.showTab;
+  window.showTab = function(t){
+    if(_origST99) _origST99(t);
+    if(t==="dashboard") setTimeout(function(){ if(typeof markDirty==="function") markDirty(); },300);
+  };
+  console.log("showTab diff hook active");
 })();
