@@ -2083,3 +2083,53 @@ window.resetLayout   = resetLayout;
   if(document.querySelector('#tab-dashboard.active')) checkAnnualSpikes();
   console.log('patch: annual spike warning active (dormant — no annual items yet)');
 })();
+
+(function(){
+  var _md2 = window.markDirty;
+  window.markDirty = function(){
+    if(_md2) _md2();
+    setTimeout(function(){
+      var dash = document.getElementById("tab-dashboard");
+      if(!dash || !dash.classList.contains("active")) return;
+      var saved;
+      try{ saved=JSON.parse(localStorage.getItem("bp_state_v8")||"{}"); }catch(e){ return; }
+      if(!saved.items) return;
+      var cur = typeof items!=="undefined"?items:[];
+      var fmt = function(n){ return Math.round(n).toLocaleString("en-LK"); };
+      var changes=[];
+      cur.forEach(function(c){
+        var p=saved.items.filter(function(x){return x.id===c.id;})[0];
+        if(!p){changes.push({type:"added",name:c.name});return;}
+        if(Math.abs((p.val||0)-(c.val||0))>0) changes.push({type:"changed",name:c.name,from:p.val,to:c.val});
+        if(p.on!==c.on) changes.push({type:"toggled",name:c.name});
+      });
+      saved.items.forEach(function(p){
+        if(!cur.filter(function(c){return c.id===p.id;}).length) changes.push({type:"removed",name:p.name});
+      });
+      var old = document.getElementById("diff-banner");
+      if(old) old.remove();
+      if(!changes.length) return;
+      var savedAt = saved._ts ? new Date(saved._ts).toLocaleString() : "";
+      var rows = changes.slice(0,6).map(function(c){
+        var color = c.type==="added"?"#1D9E75":c.type==="removed"?"#E24B4A":"#378ADD";
+        var bg    = c.type==="added"?"#e1f5ee":c.type==="removed"?"#fce8e8":"#e6f1fb";
+        var txt   = c.type==="changed"? c.name+" "+fmt(c.from)+" → "+fmt(c.to)+" LKR"
+                  : c.type==="added"  ? "+ "+c.name : "- "+c.name;
+        return "<span style=\"font-size:11px;padding:2px 8px;border-radius:99px;background:"+bg+";color:"+color+";border:1px solid "+color+"\">"+txt+"</span>";
+      }).join("");
+      if(changes.length>6) rows+="<span style=\"font-size:11px;padding:2px 8px;border-radius:99px;background:#e8e7e3;color:#6b6b66\">+"+(changes.length-6)+" more</span>";
+      var b=document.createElement("div");
+      b.id="diff-banner";
+      b.style.cssText="background:#e6f1fb;border:1px solid #378ADD;border-radius:10px;padding:12px 16px;margin-bottom:14px;";
+      b.innerHTML="<div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px;\">"
+        +"<span style=\"font-size:11px;font-weight:700;color:#378ADD;\">Unsaved changes since last save</span>"
+        +"<span style=\"font-size:10px;color:#6b6b66;\">"+savedAt+"</span>"
+        +"<button onclick=\"document.getElementById('diff-banner').remove()\" style=\"margin-left:auto;border:none;background:none;cursor:pointer;font-size:18px;line-height:1;\">×</button>"
+        +"</div>"
+        +"<div style=\"display:flex;flex-wrap:wrap;gap:5px;\">"+rows+"</div>";
+      var ev=document.getElementById("events-banner");
+      if(ev) dash.insertBefore(b,ev); else dash.insertBefore(b,dash.firstChild);
+    },200);
+  };
+  console.log("Diff banner wired to markDirty");
+})();
