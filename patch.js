@@ -2122,7 +2122,7 @@ window.resetLayout   = resetLayout;
       if(changes.length>6) rows+="<span style=\"font-size:11px;padding:2px 8px;border-radius:99px;background:#e8e7e3;color:#6b6b66\">+"+(changes.length-6)+" more</span>";
       var b=document.createElement("div");
       b.id="diff-banner";
-      b.style.cssText="background:#e6f1fb;border:1px solid #378ADD;border-radius:10px;padding:12px 16px;margin-bottom:14px;";
+      b.style.cssText="grid-column:1/-1;background:#e6f1fb;border:1px solid #378ADD;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;";
       b.innerHTML="<div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px;\">"
         +"<span style=\"font-size:11px;font-weight:700;color:#378ADD;\">Unsaved changes since last save</span>"
         +"<span style=\"font-size:10px;color:#6b6b66;\">"+savedAt+"</span>"
@@ -2130,8 +2130,7 @@ window.resetLayout   = resetLayout;
         +"</div>"
         +"<div style=\"display:flex;flex-wrap:wrap;gap:5px;\">"+rows+"</div>";
       var ev=document.getElementById("events-banner");
-      var target=dash.querySelector(".gm-grid-dashboard")||dash;
-      var ev=target.querySelector("#events-banner")||target.firstChild;
+      var target=document.getElementById("gm-grid-dashboard")||dash;
       target.insertBefore(b,target.firstChild);
     },200);
   };
