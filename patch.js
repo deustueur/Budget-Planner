@@ -1995,7 +1995,8 @@ window.resetLayout   = resetLayout;
     const noise=newNames.filter(n=>remNames.includes(n));
     return diffs.filter(d=>!noise.includes(d.name));
   }
-  function injectDiffBanner(){
+  function injectDiffBanner(){ return; // disabled — replaced by outer hook
+
     const existing=document.getElementById('diff-banner');
     if(existing) existing.remove();
     const diffs=buildDiff();
@@ -2091,6 +2092,7 @@ window.resetLayout   = resetLayout;
     setTimeout(function(){
       var dash = document.getElementById("tab-dashboard");
       if(!dash) return;
+      var grid=dash.querySelector(".gm-grid-dashboard")||dash;
       var saved;
       try{ saved=JSON.parse(localStorage.getItem("bp_state_v8")||"{}"); }catch(e){ return; }
       if(!saved.items) return;
@@ -2128,7 +2130,9 @@ window.resetLayout   = resetLayout;
         +"</div>"
         +"<div style=\"display:flex;flex-wrap:wrap;gap:5px;\">"+rows+"</div>";
       var ev=document.getElementById("events-banner");
-      if(ev) dash.insertBefore(b,ev); else dash.insertBefore(b,dash.firstChild);
+      var target=dash.querySelector(".gm-grid-dashboard")||dash;
+      var ev=target.querySelector("#events-banner")||target.firstChild;
+      target.insertBefore(b,target.firstChild);
     },200);
   };
   console.log("Diff banner wired to markDirty");
